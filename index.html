@@ -22,6 +22,8 @@
       width: 100%;
       height: 100%;
     }
+    /* 建立堆疊情境：CSS2DRenderer 會給標籤很大的 z-index，不框住就會蓋過調整面板與按鈕列 */
+    #app { z-index: 0; }
     #標題區 {
       position: fixed;
       z-index: 10;
@@ -111,12 +113,12 @@
       cursor: pointer;
       touch-action: manipulation;
     }
-    #圖層 button[aria-pressed="true"] {
+    #圖層 button[aria-pressed="true"], #圖層 button[aria-expanded="true"] {
       border-color: #1f6e43;
       background: #e3f4ea;
       color: #1f5c39;
     }
-    #圖層 button[aria-pressed="true"]::before { content: "✓ "; }
+    #圖層 button[aria-pressed="true"]::before, #圖層 button[aria-expanded="true"]::before { content: "✓ "; }
     #圖層 button:focus-visible, #視角按鈕 button:focus-visible, #移動 button:focus-visible {
       outline: 3px solid #f0b400;
       outline-offset: 2px;
@@ -129,7 +131,7 @@
       font-weight: 700;
     }
     #剖切 input { width: 110px; }
-    #材料表, #AR面板 {
+    #材料表 {
       position: fixed;
       z-index: 30;
       left: 50%;
@@ -144,10 +146,10 @@
       color: #18212b;
       box-shadow: 0 10px 40px rgba(0, 0, 0, .3);
     }
-    #材料表 h2, #AR面板 h2 { margin: 0 0 8px; font-size: 17px; }
+    #材料表 h2 { margin: 0 0 8px; font-size: 17px; }
     #材料表 table { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
     #材料表 th, #材料表 td { padding: 6px 4px; border-bottom: 1px solid #e3e8ec; text-align: left; }
-    #材料表 p, #AR面板 p { margin: 8px 0 0; color: #4c5965; font-size: 12px; }
+    #材料表 p { margin: 8px 0 0; color: #4c5965; font-size: 12px; }
     .關閉 {
       float: right;
       padding: 4px 10px;
@@ -157,7 +159,6 @@
       font: inherit;
       cursor: pointer;
     }
-    #AR面板 model-viewer { width: 100%; height: min(60vh, 420px); background: #eef3f6; border-radius: 8px; }
     #移動 {
       position: fixed;
       z-index: 20;
@@ -208,7 +209,7 @@
       }
       #圖層 > * { flex: 0 0 auto; }
       #操作提示 {
-        top: calc(max(12px, env(safe-area-inset-top)) + 212px);
+        top: calc(max(12px, env(safe-area-inset-top)) + 248px);
         bottom: auto;
         max-width: calc(100vw - 32px);
         width: max-content;
@@ -294,7 +295,22 @@
       white-space: nowrap;
       pointer-events: none;
     }
+    #調整面板 {
+      position: fixed;
+      z-index: 15;
+      left: max(12px, env(safe-area-inset-left));
+      top: calc(max(12px, env(safe-area-inset-top)) + 88px);
+      max-height: calc(100dvh - max(12px, env(safe-area-inset-top)) - 88px - 175px);
+      overflow-y: auto;
+      overscroll-behavior: contain;
+    }
+    #調整面板 .lil-gui.root { --width: min(260px, calc(100vw - 24px)); }
+    .面板說明 { padding: 4px 8px 6px; font-size: 11px; color: #b0b0b0; }
     @media (max-width: 680px) {
+      #調整面板 {
+        top: calc(max(12px, env(safe-area-inset-top)) + 196px);
+        max-height: calc(100dvh - max(12px, env(safe-area-inset-top)) - 196px - 175px);
+      }
       #標題區 {
         right: 12px;
         padding: 8px 10px;
@@ -332,7 +348,7 @@
 
   <header id="標題區">
     <h1>B5 小倉庫貨架 3D 圖</h1>
-    <p>單位 cm｜高度＝地板到層板上面｜板厚 6mm</p>
+    <p id="副標">單位 cm｜高度＝地板到層板上面｜板厚 6mm</p>
   </header>
 
   <nav id="視角按鈕" aria-label="視角切換">
@@ -348,40 +364,17 @@
     <button type="button" data-layer="名稱" aria-pressed="true">貨架名稱</button>
     <button type="button" data-layer="牆面" aria-pressed="true">牆面</button>
     <label id="剖切" for="剖切高度">剖切 <input id="剖切高度" type="range" min="20" max="400" step="5" value="400"> <output id="剖切值">全部</output></label>
-    <button type="button" id="開材料表" aria-pressed="false">材料表</button>
-    <button type="button" id="開AR" aria-pressed="false">AR 實景</button>
+    <button type="button" id="開材料表" aria-expanded="false" aria-controls="材料表">材料表</button>
   </div>
-  <section id="材料表" hidden aria-label="材料表">
+  <section id="材料表" role="dialog" aria-labelledby="材料表標題" hidden>
     <button type="button" class="關閉" data-close="材料表">關閉</button>
-    <h2>層板材料表</h2>
+    <h2 id="材料表標題">層板材料表</h2>
     <table>
       <thead><tr><th>貨架</th><th>層板尺寸 cm</th><th>片數</th><th>用板</th></tr></thead>
-      <tbody>
-        <tr><td>A 架</td><td>77 × 186</td><td>4</td><td>3×7 尺（91×212）4 張</td></tr>
-        <tr><td>B 架</td><td>77 × 203</td><td>4</td><td>3×7 尺（91×212）4 張</td></tr>
-        <tr><td>C 小格</td><td>60 × 49</td><td>3</td><td>3×6 尺（91×182）1 張</td></tr>
-        <tr><td>D 架</td><td>76 × 251</td><td>5</td><td>4×8 尺（122×244）5 張＋拼接</td></tr>
-        <tr><td>E 架</td><td>82 × 225.5</td><td>4</td><td>4×8 尺（122×244）4 張</td></tr>
-      </tbody>
+      <tbody id="材料表內容"></tbody>
     </table>
-    <p>來源：B5 小倉庫貨架層板規劃 PDF。板厚 6mm。D 架層板 251 長，4×8 尺板只有 244，每片在離門那側牆 7 cm 處拼接。</p>
+    <p id="材料表註"></p>
   </section>
-
-  <section id="AR面板" hidden aria-label="AR 實景">
-    <button type="button" class="關閉" data-close="AR面板">關閉</button>
-    <h2>AR 實景（1:1 實際大小）</h2>
-    <model-viewer id="AR模型" src="b5-shelves.glb" ar ar-modes="webxr scene-viewer quick-look" ar-scale="fixed" camera-controls touch-action="pan-y" shadow-intensity="1" alt="B5 貨架 1:1 模型"></model-viewer>
-    <p>按右下角 AR 圖示，手機鏡頭對準地板，把模型移到倉庫裡對位。只有貨架，沒有尺寸文字。需支援 AR 的手機：Android 需 ARCore；iPhone 建議 iOS 16.4 以上，較舊版本未實機驗證，可能無法使用。</p>
-  </section>
-
-  <script>
-    document.getElementById("AR模型").addEventListener("error", () => {
-      const note = document.createElement("p");
-      note.textContent = "AR 模型載入失敗，請確認網路後重新整理。";
-      note.style.color = "#b42318";
-      document.getElementById("AR面板").appendChild(note);
-    }, { once: true });
-  </script>
 
   <div id="移動">
     <button type="button" id="前進" aria-label="鏡頭往前">▲ 前進</button>
@@ -389,20 +382,78 @@
   </div>
   <div id="操作提示">單指拖曳＝360° 轉視角｜雙指捏合＝縮放｜雙指拖曳＝平移｜按住前進／後退＝走動</div>
 
+  <div id="調整面板" aria-label="調整尺寸面板"></div>
+
   <aside id="圖例">
     <strong>貨架圖例</strong>
-    <div class="圖例列"><span class="色塊" style="background:#0072b2"></span>A 架 186×77（PDF 紅）</div>
-    <div class="圖例列"><span class="色塊" style="background:#e69f00"></span>B 架 203×77（PDF 紅）</div>
-    <div class="圖例列"><span class="色塊" style="background:#cc79a7"></span>C 小格 60×49（PDF 紅）</div>
-    <div class="圖例列"><span class="色塊" style="background:#009e73"></span>D 架 251×76（PDF 綠）</div>
-    <div class="圖例列"><span class="色塊" style="background:#d7263d"></span>E 架 225.5×82（PDF 橘）</div>
   </aside>
 
-  <script type="module" src="https://cdn.jsdelivr.net/npm/@google/model-viewer@3.5.0/dist/model-viewer.min.js"></script>
   <script type="module">
     import * as THREE from "three";
     import { OrbitControls } from "three/addons/controls/OrbitControls.js";
     import { CSS2DRenderer, CSS2DObject } from "three/addons/renderers/CSS2DRenderer.js";
+    import GUI from "three/addons/libs/lil-gui.module.min.js";
+
+    // ───────────── 單一資料源：所有尺寸、貨架、標籤、材料表、尺寸線都由此產生 ─────────────
+    const DESIGN = {
+      room: { length: 530, width: 251, ceiling: 400 },
+      boardThickness: 0.6,
+      rackHeight: 300,
+      sheetMax: 244,
+      door: { x0: 0, x1: 90, swing: "out", height: 210, labelOffset: { x: 38, z: 71 } },
+      racks: [
+        {
+          id: "A", name: "A 架", color: "#0072b2", pdfColor: "紅", axis: "x",
+          x0: 0, x1: 186, z0: 0, z1: 77, levels: [81, 141, 201, 261],
+          hl: { dx: 7, zRef: "z1", dz: 7 },
+          pdfSize: "77 × 186",
+          stock: "3×7 尺（91×212）4 張", stockBasis: [77, 186, 4]
+        },
+        {
+          id: "B", name: "B 架", color: "#e69f00", pdfColor: "紅", axis: "x",
+          x0: 186, x1: 389, z0: 0, z1: 77, levels: [81, 141, 201, 261],
+          hl: { dx: 7, zRef: "z1", dz: 7 },
+          pdfSize: "77 × 203",
+          stock: "3×7 尺（91×212）4 張", stockBasis: [77, 203, 4]
+        },
+        {
+          id: "C", name: "C 小格", color: "#cc79a7", pdfColor: "紅", axis: "x",
+          x0: 389, x1: 449, z0: 0, z1: 49, levels: [81, 168, 261],
+          hl: { dx: 6, zRef: "z1", dz: 7 },
+          pdfSize: "60 × 49",
+          stock: "3×6 尺（91×182）1 張", stockBasis: [49, 60, 3]
+        },
+        {
+          id: "D", name: "D 架", color: "#009e73", pdfColor: "綠", axis: "z",
+          x0: 454, x1: 530, z0: 0, z1: 251, levels: [61, 121, 181, 241, 300], seamZ: 7, seamFrom: "離 A／B 架那側牆",
+          hl: { dx: -7, zRef: 0, dz: 20 },
+          pdfSize: "76 × 251",
+          stock: "4×8 尺（122×244）5 張＋拼接", stockBasis: [76, 251, 5]
+        },
+        {
+          id: "E", name: "E 架", color: "#d7263d", pdfColor: "橘", axis: "x",
+          x0: 163.5, x1: 389, z0: 169, z1: 251, levels: [81, 141, 201, 261],
+          hl: { dx: 6.5, zRef: "z0", dz: -7 },
+          pdfSize: "82 × 225.5",
+          stock: "4×8 尺（122×244）4 張", stockBasis: [82, 225.5, 4]
+        }
+      ],
+      // 尺寸線：axis "z"＝沿 Z 方向量（線在 X=at），axis "x"＝沿 X 方向量（線在 Z=at）。端點可為數字或 {rack, edge}
+      dims: [
+        { axis: "z", at: 420, from: { rack: "B", edge: "z1" }, to: { rack: "E", edge: "z0" }, tick: 6, text: "走道 ", labelDz: 0 },
+        { axis: "x", at: 58, from: { rack: "C", edge: "x1" }, to: { rack: "D", edge: "x0" }, tick: 4, text: "間隙 ", labelDz: 10 },
+        { axis: "x", at: 238, from: 0, to: { rack: "E", edge: "x0" }, tick: 5, text: "", labelDz: 0 }
+      ]
+    };
+    const DEFAULT_DESIGN = JSON.parse(JSON.stringify(DESIGN));
+    const fmt = n => String(Math.round(n * 100) / 100);
+    const rackById = id => DESIGN.racks.find(r => r.id === id);
+    const rackLen = r => (r.axis === "z" ? r.z1 - r.z0 : r.x1 - r.x0);
+    const rackDep = r => (r.axis === "z" ? r.x1 - r.x0 : r.z1 - r.z0);
+    const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+    const MIN_SPAN = 5;
+    const LABEL_RISE = 16; // 貨架名稱標籤浮在貨架頂端上方的高度
+    const labelY = () => DESIGN.rackHeight + LABEL_RISE;
 
     const app = document.getElementById("app");
     const scene = new THREE.Scene();
@@ -426,6 +477,8 @@
     labelRenderer.domElement.style.pointerEvents = "none";
     app.appendChild(labelRenderer.domElement);
 
+    const roomCenter = () => new THREE.Vector3(DESIGN.room.length / 2, 115, DESIGN.room.width / 2);
+
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
     controls.dampingFactor = 0.075;
@@ -434,7 +487,7 @@
     controls.minDistance = 10;
     controls.maxDistance = 2200;
     controls.maxPolarAngle = Math.PI * 0.495;
-    controls.target.set(265, 115, 125.5);
+    controls.target.copy(roomCenter());
 
     scene.add(new THREE.HemisphereLight(0xffffff, 0x73808b, 2.15));
 
@@ -450,19 +503,8 @@
     keyLight.shadow.camera.far = 1200;
     scene.add(keyLight);
 
-    const floor = new THREE.Mesh(
-      new THREE.PlaneGeometry(530, 251),
-      new THREE.MeshStandardMaterial({
-        color: 0xd4d7d9,
-        roughness: 0.95,
-        metalness: 0
-      })
-    );
-    floor.rotation.x = -Math.PI / 2;
-    floor.position.set(265, -0.08, 125.5);
-    floor.receiveShadow = true;
-    scene.add(floor);
-
+    // 共用材質（重建時不 dispose）
+    const floorMaterial = new THREE.MeshStandardMaterial({ color: 0xd4d7d9, roughness: 0.95, metalness: 0 });
     const wallMaterial = new THREE.MeshBasicMaterial({
       color: 0x8aa0af,
       transparent: true,
@@ -470,205 +512,189 @@
       side: THREE.DoubleSide,
       depthWrite: false
     });
-    const wallLineMaterial = new THREE.LineBasicMaterial({
-      color: 0x536674,
-      transparent: true,
-      opacity: 0.78
+    const wallLineMaterial = new THREE.LineBasicMaterial({ color: 0x536674, transparent: true, opacity: 0.78 });
+    const doorMaterial = new THREE.MeshStandardMaterial({
+      color: 0x9aa3ab, transparent: true, opacity: 0.6, roughness: 0.8, side: THREE.DoubleSide
     });
+    const doorEdgeMaterial = new THREE.LineBasicMaterial({ color: 0x315b75 });
+    const hingeMaterial = new THREE.MeshStandardMaterial({ color: 0x31434f, roughness: 0.65 });
+    const arcMaterial = new THREE.LineDashedMaterial({ color: 0x326888, dashSize: 5, gapSize: 3 });
+    const dimensionMaterial = new THREE.LineBasicMaterial({ color: 0x263b49, depthTest: false });
+    const SHARED_MATERIALS = new Set([
+      floorMaterial, wallMaterial, wallLineMaterial, doorMaterial, doorEdgeMaterial,
+      hingeMaterial, arcMaterial, dimensionMaterial
+    ]);
 
-    function wallAtZ(x0, x1, z, h0 = 0, h1 = 400) {
-      const mesh = new THREE.Mesh(
-        new THREE.PlaneGeometry(x1 - x0, h1 - h0),
-        wallMaterial
-      );
-      mesh.position.set((x0 + x1) / 2, (h0 + h1) / 2, z);
-      scene.add(mesh);
-    }
-
-    function wallAtX(z0, z1, x, h0 = 0, h1 = 400) {
-      const mesh = new THREE.Mesh(
-        new THREE.PlaneGeometry(z1 - z0, h1 - h0),
-        wallMaterial
-      );
-      mesh.rotation.y = Math.PI / 2;
-      mesh.position.set(x, (h0 + h1) / 2, (z0 + z1) / 2);
-      scene.add(mesh);
-    }
-
-    function addSegments(points, material = wallLineMaterial) {
-      const geometry = new THREE.BufferGeometry().setFromPoints(points);
-      const line = new THREE.LineSegments(geometry, material);
-      scene.add(line);
+    function addSegments(group, points, material = wallLineMaterial) {
+      const line = new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(points), material);
+      group.add(line);
       return line;
     }
 
-    function rectangularOutlineZ(x0, x1, z, h0, h1) {
-      addSegments([
-        new THREE.Vector3(x0, h0, z), new THREE.Vector3(x1, h0, z),
-        new THREE.Vector3(x1, h0, z), new THREE.Vector3(x1, h1, z),
-        new THREE.Vector3(x1, h1, z), new THREE.Vector3(x0, h1, z),
-        new THREE.Vector3(x0, h1, z), new THREE.Vector3(x0, h0, z)
-      ]);
-    }
-
-    function rectangularOutlineX(z0, z1, x, h0, h1) {
-      addSegments([
-        new THREE.Vector3(x, h0, z0), new THREE.Vector3(x, h0, z1),
-        new THREE.Vector3(x, h0, z1), new THREE.Vector3(x, h1, z1),
-        new THREE.Vector3(x, h1, z1), new THREE.Vector3(x, h1, z0),
-        new THREE.Vector3(x, h1, z0), new THREE.Vector3(x, h0, z0)
-      ]);
-    }
-
-    wallAtZ(0, 530, 0);
-    wallAtX(0, 251, 0);
-    wallAtX(0, 251, 530);
-    wallAtZ(90, 530, 251);
-    wallAtZ(0, 90, 251, 210, 400);
-
-    rectangularOutlineZ(0, 530, 0, 0, 400);
-    rectangularOutlineX(0, 251, 0, 0, 400);
-    rectangularOutlineX(0, 251, 530, 0, 400);
-    rectangularOutlineZ(90, 530, 251, 0, 400);
-    rectangularOutlineZ(0, 90, 251, 210, 400);
-
-    addSegments([
-      new THREE.Vector3(0, 400, 0), new THREE.Vector3(530, 400, 0),
-      new THREE.Vector3(530, 400, 0), new THREE.Vector3(530, 400, 251),
-      new THREE.Vector3(530, 400, 251), new THREE.Vector3(0, 400, 251),
-      new THREE.Vector3(0, 400, 251), new THREE.Vector3(0, 400, 0),
-      new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 400, 0),
-      new THREE.Vector3(530, 0, 0), new THREE.Vector3(530, 400, 0),
-      new THREE.Vector3(530, 0, 251), new THREE.Vector3(530, 400, 251),
-      new THREE.Vector3(0, 210, 251), new THREE.Vector3(0, 400, 251)
-    ]);
-
-    const doorMaterial = new THREE.MeshStandardMaterial({
-      color: 0x9aa3ab,
-      transparent: true,
-      opacity: 0.6,
-      roughness: 0.8,
-      side: THREE.DoubleSide
-    });
-    const door = new THREE.Mesh(new THREE.BoxGeometry(2, 210, 90), doorMaterial);
-    door.position.set(90, 105, 296);
-    door.castShadow = true;
-    scene.add(door);
-
-    const doorEdges = new THREE.LineSegments(
-      new THREE.EdgesGeometry(door.geometry),
-      new THREE.LineBasicMaterial({ color: 0x315b75 })
-    );
-    doorEdges.position.copy(door.position);
-    scene.add(doorEdges);
-
-    const hinge = new THREE.Mesh(
-      new THREE.CylinderGeometry(2.2, 2.2, 214, 14),
-      new THREE.MeshStandardMaterial({ color: 0x31434f, roughness: 0.65 })
-    );
-    hinge.position.set(90, 107, 251);
-    scene.add(hinge);
-
-    const arcPoints = [];
-    for (let i = 0; i <= 36; i++) {
-      const angle = (Math.PI / 2) * (i / 36);
-      arcPoints.push(new THREE.Vector3(
-        90 - 90 * Math.cos(angle),
-        0.7,
-        251 + 90 * Math.sin(angle)
-      ));
-    }
-    const arc = new THREE.Line(
-      new THREE.BufferGeometry().setFromPoints(arcPoints),
-      new THREE.LineDashedMaterial({
-        color: 0x326888,
-        dashSize: 5,
-        gapSize: 3
-      })
-    );
-    arc.computeLineDistances();
-    scene.add(arc);
-
-    function addLabel(text, x, height, z, className, background) {
+    function addLabel(group, text, x, height, z, className, background) {
       const element = document.createElement("div");
       element.className = className;
       element.textContent = text;
       if (background) element.style.background = background;
       const label = new CSS2DObject(element);
       label.position.set(x, height, z);
-      scene.add(label);
+      group.add(label);
       return label;
     }
 
-    addLabel("門 90（向外開）", 38, 5, 322, "地面標籤");
+    // 釋放：geometry／非共用 material dispose，CSS2DObject 的 DOM 元素移除（three.js 手冊 how-to-dispose-of-objects）
+    function disposeTree(root) {
+      root.traverse(obj => {
+        if (obj.isCSS2DObject) obj.element.remove();
+        if (obj.geometry) obj.geometry.dispose();
+        const mats = Array.isArray(obj.material) ? obj.material : obj.material ? [obj.material] : [];
+        for (const m of mats) if (!SHARED_MATERIALS.has(m)) m.dispose();
+      });
+      root.removeFromParent();
+    }
 
-    const postPositions = new Set();
-    const boardEdgeMaterials = new Map();
+    // ───────────── 房間（牆、門、地板） ─────────────
+    function buildRoom() {
+      const { length: L, width: W, ceiling: H } = DESIGN.room;
+      const d = DESIGN.door;
+      const doorW = d.x1 - d.x0;
+      const sign = d.swing === "out" ? 1 : -1;
+      const g = new THREE.Group();
+      g.name = "room";
 
+      const floor = new THREE.Mesh(new THREE.PlaneGeometry(L, W), floorMaterial);
+      floor.rotation.x = -Math.PI / 2;
+      floor.position.set(L / 2, -0.08, W / 2);
+      floor.receiveShadow = true;
+      floor.userData.isFloor = true;
+      g.add(floor);
+
+      const wallAtZ = (x0, x1, z, h0 = 0, h1 = H) => {
+        const mesh = new THREE.Mesh(new THREE.PlaneGeometry(x1 - x0, h1 - h0), wallMaterial);
+        mesh.position.set((x0 + x1) / 2, (h0 + h1) / 2, z);
+        g.add(mesh);
+      };
+      const wallAtX = (z0, z1, x, h0 = 0, h1 = H) => {
+        const mesh = new THREE.Mesh(new THREE.PlaneGeometry(z1 - z0, h1 - h0), wallMaterial);
+        mesh.rotation.y = Math.PI / 2;
+        mesh.position.set(x, (h0 + h1) / 2, (z0 + z1) / 2);
+        g.add(mesh);
+      };
+      const outlineZ = (x0, x1, z, h0, h1) => addSegments(g, [
+        new THREE.Vector3(x0, h0, z), new THREE.Vector3(x1, h0, z),
+        new THREE.Vector3(x1, h0, z), new THREE.Vector3(x1, h1, z),
+        new THREE.Vector3(x1, h1, z), new THREE.Vector3(x0, h1, z),
+        new THREE.Vector3(x0, h1, z), new THREE.Vector3(x0, h0, z)
+      ]);
+      const outlineX = (z0, z1, x, h0, h1) => addSegments(g, [
+        new THREE.Vector3(x, h0, z0), new THREE.Vector3(x, h0, z1),
+        new THREE.Vector3(x, h0, z1), new THREE.Vector3(x, h1, z1),
+        new THREE.Vector3(x, h1, z1), new THREE.Vector3(x, h1, z0),
+        new THREE.Vector3(x, h1, z0), new THREE.Vector3(x, h0, z0)
+      ]);
+
+      wallAtZ(0, L, 0);
+      wallAtX(0, W, 0);
+      wallAtX(0, W, L);
+      if (d.x0 > 0) wallAtZ(0, d.x0, W);
+      if (d.x1 < L) wallAtZ(d.x1, L, W);
+      wallAtZ(d.x0, d.x1, W, d.height, H);
+
+      outlineZ(0, L, 0, 0, H);
+      outlineX(0, W, 0, 0, H);
+      outlineX(0, W, L, 0, H);
+      if (d.x0 > 0) outlineZ(0, d.x0, W, 0, H);
+      if (d.x1 < L) outlineZ(d.x1, L, W, 0, H);
+      outlineZ(d.x0, d.x1, W, d.height, H);
+
+      addSegments(g, [
+        new THREE.Vector3(0, H, 0), new THREE.Vector3(L, H, 0),
+        new THREE.Vector3(L, H, 0), new THREE.Vector3(L, H, W),
+        new THREE.Vector3(L, H, W), new THREE.Vector3(0, H, W),
+        new THREE.Vector3(0, H, W), new THREE.Vector3(0, H, 0),
+        new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, H, 0),
+        new THREE.Vector3(L, 0, 0), new THREE.Vector3(L, H, 0),
+        new THREE.Vector3(L, 0, W), new THREE.Vector3(L, H, W),
+        new THREE.Vector3(d.x0, d.height, W), new THREE.Vector3(d.x0, H, W)
+      ]);
+
+      const door = new THREE.Mesh(new THREE.BoxGeometry(2, d.height, doorW), doorMaterial);
+      door.position.set(d.x1, d.height / 2, W + sign * doorW / 2);
+      door.castShadow = true;
+      g.add(door);
+
+      const doorEdges = new THREE.LineSegments(new THREE.EdgesGeometry(door.geometry), doorEdgeMaterial);
+      doorEdges.position.copy(door.position);
+      g.add(doorEdges);
+
+      const hinge = new THREE.Mesh(new THREE.CylinderGeometry(2.2, 2.2, d.height + 4, 14), hingeMaterial);
+      hinge.position.set(d.x1, d.height / 2 + 2, W);
+      g.add(hinge);
+
+      const arcPoints = [];
+      for (let i = 0; i <= 36; i++) {
+        const angle = (Math.PI / 2) * (i / 36);
+        arcPoints.push(new THREE.Vector3(
+          d.x1 - doorW * Math.cos(angle),
+          0.7,
+          W + sign * doorW * Math.sin(angle)
+        ));
+      }
+      const arc = new THREE.Line(new THREE.BufferGeometry().setFromPoints(arcPoints), arcMaterial);
+      arc.computeLineDistances();
+      g.add(arc);
+
+      addLabel(g, `門 ${fmt(doorW)}（向${d.swing === "out" ? "外" : "內"}開）`,
+        d.x0 + d.labelOffset.x, 5, W + sign * d.labelOffset.z, "地面標籤");
+      return g;
+    }
+
+    // ───────────── 貨架（每個貨架一個 Group） ─────────────
     function darken(hex, amount = 0.56) {
       const c = new THREE.Color(hex);
       c.multiplyScalar(amount);
       return c;
     }
 
-    function addRack(rack) {
+    function buildRack(rack) {
+      const g = new THREE.Group();
+      g.name = `rack-${rack.id}`;
+      const t = DESIGN.boardThickness;
       const color = new THREE.Color(rack.color);
       const darkColor = darken(rack.color);
-      const boardMaterial = new THREE.MeshStandardMaterial({
-        color,
-        roughness: 0.72,
-        metalness: 0.05
-      });
-      const postMaterial = new THREE.MeshStandardMaterial({
-        color: darkColor,
-        roughness: 0.68,
-        metalness: 0.1
-      });
+      const boardMaterial = new THREE.MeshStandardMaterial({ color, roughness: 0.72, metalness: 0.05 });
+      const postMaterial = new THREE.MeshStandardMaterial({ color: darkColor, roughness: 0.68, metalness: 0.1 });
       const edgeMaterial = new THREE.LineBasicMaterial({ color: darkColor });
-      boardEdgeMaterials.set(rack.name, edgeMaterial);
+      const seamMaterial = new THREE.LineBasicMaterial({ color: 0x00402d });
+      const hl = rack.hl;
+      const hlx = rack.x0 + hl.dx;
+      const hlz = (hl.zRef ? rack[hl.zRef] : 0) + hl.dz;
+      const needSeam = rack.seamZ !== undefined && rackLen(rack) > DESIGN.sheetMax;
 
       for (const height of rack.levels) {
-        const geometry = new THREE.BoxGeometry(
-          rack.x1 - rack.x0,
-          0.6,
-          rack.z1 - rack.z0
-        );
+        const geometry = new THREE.BoxGeometry(rack.x1 - rack.x0, t, rack.z1 - rack.z0);
         const board = new THREE.Mesh(geometry, boardMaterial);
-        board.position.set(
-          (rack.x0 + rack.x1) / 2,
-          height - 0.3,
-          (rack.z0 + rack.z1) / 2
-        );
+        board.position.set((rack.x0 + rack.x1) / 2, height - t / 2, (rack.z0 + rack.z1) / 2);
         board.castShadow = true;
         board.receiveShadow = true;
         board.userData.rack = true;
-        scene.add(board);
+        g.add(board);
 
-        const edges = new THREE.LineSegments(
-          new THREE.EdgesGeometry(geometry),
-          edgeMaterial
-        );
+        const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geometry), edgeMaterial);
         edges.position.copy(board.position);
         edges.userData.rack = true;
-        scene.add(edges);
+        g.add(edges);
 
-        addLabel(
-          String(height),
-          rack.heightLabel.x,
-          height + 2,
-          rack.heightLabel.z,
-          "高度標籤"
-        );
+        addLabel(g, fmt(height), hlx, height + 2, hlz, "高度標籤");
 
-        if (rack.seamZ !== undefined) {
-          const seam = new THREE.Line(
+        if (needSeam) {
+          g.add(new THREE.Line(
             new THREE.BufferGeometry().setFromPoints([
               new THREE.Vector3(rack.x0, height + 0.04, rack.seamZ),
               new THREE.Vector3(rack.x1, height + 0.04, rack.seamZ)
             ]),
-            new THREE.LineBasicMaterial({ color: 0x00402d })
-          );
-          scene.add(seam);
+            seamMaterial
+          ));
         }
       }
 
@@ -678,203 +704,459 @@
         [rack.x1 - 2, rack.z0 + 2],
         [rack.x1 - 2, rack.z1 - 2]
       ];
-
       for (const [x, z] of corners) {
-        const key = `${x}|${z}`;
-        if (postPositions.has(key)) continue;
-        postPositions.add(key);
-
-        const post = new THREE.Mesh(
-          new THREE.BoxGeometry(4, 300, 4),
-          postMaterial
-        );
-        post.position.set(x, 150, z);
+        const post = new THREE.Mesh(new THREE.BoxGeometry(4, DESIGN.rackHeight, 4), postMaterial);
+        post.position.set(x, DESIGN.rackHeight / 2, z);
         post.castShadow = true;
         post.receiveShadow = true;
         post.userData.rack = true;
-        scene.add(post);
+        g.add(post);
       }
 
       addLabel(
-        rack.label,
-        rack.labelPosition.x,
-        316,
-        rack.labelPosition.z,
+        g,
+        `${rack.name} ${fmt(rackLen(rack))}×${fmt(rackDep(rack))}`,
+        (rack.x0 + rack.x1) / 2,
+        labelY(),
+        (rack.z0 + rack.z1) / 2,
         "貨架標籤",
         `#${color.getHexString()}`
       );
+      return g;
     }
 
-    const racks = [
-      {
-        name: "紅A",
-        label: "A 架 186×77",
-        color: 0x0072b2,
-        x0: 0, x1: 186, z0: 0, z1: 77,
-        levels: [81, 141, 201, 261],
-        labelPosition: { x: 93, z: 38.5 },
-        heightLabel: { x: 7, z: 84 }
-      },
-      {
-        name: "紅B",
-        label: "B 架 203×77",
-        color: 0xe69f00,
-        x0: 186, x1: 389, z0: 0, z1: 77,
-        levels: [81, 141, 201, 261],
-        labelPosition: { x: 287.5, z: 38.5 },
-        heightLabel: { x: 193, z: 84 }
-      },
-      {
-        name: "小格",
-        label: "C 小格 60×49",
-        color: 0xcc79a7,
-        x0: 389, x1: 449, z0: 0, z1: 49,
-        levels: [81, 168, 261],
-        labelPosition: { x: 419, z: 24.5 },
-        heightLabel: { x: 395, z: 56 }
-      },
-      {
-        name: "綠",
-        label: "D 架 251×76",
-        color: 0x009e73,
-        x0: 454, x1: 530, z0: 0, z1: 251,
-        levels: [61, 121, 181, 241, 300],
-        labelPosition: { x: 492, z: 125.5 },
-        heightLabel: { x: 447, z: 20 },
-        seamZ: 7
-      },
-      {
-        name: "橘",
-        label: "E 架 225.5×82",
-        color: 0xd7263d,
-        x0: 163.5, x1: 389, z0: 169, z1: 251,
-        levels: [81, 141, 201, 261],
-        labelPosition: { x: 276.25, z: 210 },
-        heightLabel: { x: 170, z: 162 }
-      }
-    ];
+    // ───────────── 尺寸線（依貨架／房間位置算出） ─────────────
+    function resolveEnd(end) {
+      return typeof end === "number" ? end : rackById(end.rack)[end.edge];
+    }
 
-    racks.forEach(addRack);
-
-    const dimensionMaterial = new THREE.LineBasicMaterial({
-      color: 0x263b49,
-      depthTest: false
-    });
-
-    function dimensionLine(a, b, tickA1, tickA2, tickB1, tickB2) {
-      addSegments([
+    function buildDims() {
+      const { length: L, width: W } = DESIGN.room;
+      const g = new THREE.Group();
+      g.name = "dims";
+      const dimensionLine = (a, b, ta1, ta2, tb1, tb2) => addSegments(g, [
         new THREE.Vector3(...a), new THREE.Vector3(...b),
-        new THREE.Vector3(...tickA1), new THREE.Vector3(...tickA2),
-        new THREE.Vector3(...tickB1), new THREE.Vector3(...tickB2)
+        new THREE.Vector3(...ta1), new THREE.Vector3(...ta2),
+        new THREE.Vector3(...tb1), new THREE.Vector3(...tb2)
       ], dimensionMaterial);
+
+      dimensionLine([0, 0.8, -18], [L, 0.8, -18], [0, 0.8, -24], [0, 0.8, -12], [L, 0.8, -24], [L, 0.8, -12]);
+      addLabel(g, `房間長 ${fmt(L)}`, L / 2, 3, -18, "尺寸標籤");
+      dimensionLine([-18, 0.8, 0], [-18, 0.8, W], [-24, 0.8, 0], [-12, 0.8, 0], [-24, 0.8, W], [-12, 0.8, W]);
+      addLabel(g, `房間寬 ${fmt(W)}`, -18, 3, W / 2, "尺寸標籤");
+
+      for (const dim of DESIGN.dims) {
+        const a = resolveEnd(dim.from);
+        const b = resolveEnd(dim.to);
+        const mid = (a + b) / 2;
+        const text = `${dim.text}${fmt(Math.abs(b - a))}`;
+        if (dim.axis === "z") {
+          dimensionLine([dim.at, 0.8, a], [dim.at, 0.8, b],
+            [dim.at - dim.tick, 0.8, a], [dim.at + dim.tick, 0.8, a],
+            [dim.at - dim.tick, 0.8, b], [dim.at + dim.tick, 0.8, b]);
+          addLabel(g, text, dim.at, 3, mid + dim.labelDz, "地面標籤");
+        } else {
+          dimensionLine([a, 0.8, dim.at], [b, 0.8, dim.at],
+            [a, 0.8, dim.at - dim.tick], [a, 0.8, dim.at + dim.tick],
+            [b, 0.8, dim.at - dim.tick], [b, 0.8, dim.at + dim.tick]);
+          addLabel(g, text, mid, 3, dim.at + dim.labelDz, "地面標籤");
+        }
+      }
+      return g;
     }
 
-    dimensionLine(
-      [0, 0.8, -18], [530, 0.8, -18],
-      [0, 0.8, -24], [0, 0.8, -12],
-      [530, 0.8, -24], [530, 0.8, -12]
-    );
-    addLabel("房間長 530", 265, 3, -18, "尺寸標籤");
-
-    dimensionLine(
-      [-18, 0.8, 0], [-18, 0.8, 251],
-      [-24, 0.8, 0], [-12, 0.8, 0],
-      [-24, 0.8, 251], [-12, 0.8, 251]
-    );
-    addLabel("房間寬 251", -18, 3, 125.5, "尺寸標籤");
-
-    dimensionLine(
-      [420, 0.8, 77], [420, 0.8, 169],
-      [414, 0.8, 77], [426, 0.8, 77],
-      [414, 0.8, 169], [426, 0.8, 169]
-    );
-    addLabel("走道 92", 420, 3, 123, "地面標籤");
-
-    dimensionLine(
-      [449, 0.8, 58], [454, 0.8, 58],
-      [449, 0.8, 54], [449, 0.8, 62],
-      [454, 0.8, 54], [454, 0.8, 62]
-    );
-    addLabel("間隙 5", 451.5, 3, 68, "地面標籤");
-
-    dimensionLine(
-      [0, 0.8, 238], [163.5, 0.8, 238],
-      [0, 0.8, 233], [0, 0.8, 243],
-      [163.5, 0.8, 233], [163.5, 0.8, 243]
-    );
-    addLabel("163.5", 81.75, 3, 238, "地面標籤");
-
-    // 圖層開關：尺寸線（地面尺寸線＋尺寸文字）、層板高度、貨架名稱
+    // ───────────── 圖層／剖切（對重建後的新物件重新套用） ─────────────
+    const cutPlane = new THREE.Plane(new THREE.Vector3(0, -1, 0), DESIGN.room.ceiling);
+    const cutInput = document.getElementById("剖切高度");
+    const cutOut = document.getElementById("剖切值");
+    const layerState = { 尺寸: true, 層高: true, 名稱: true, 牆面: true };
     const LAYER_CLASSES = {
       尺寸: ["尺寸標籤", "地面標籤"],
       層高: ["高度標籤"],
       名稱: ["貨架標籤"]
     };
-    function setLayer(name, on) {
-      scene.traverse(obj => {
-        if (name === "尺寸" && obj.isLineSegments && obj.material === dimensionMaterial) {
-          obj.visible = on;
-        }
-        if (obj.isCSS2DObject && LAYER_CLASSES[name].some(c => obj.element.classList.contains(c))) {
-          obj.visible = on;
+
+    function applyClip(root) {
+      root.traverse(obj => {
+        if (!(obj.isMesh || obj.isLineSegments || obj.isLine) || obj.userData.isFloor || !obj.material) return;
+        const materials = Array.isArray(obj.material) ? obj.material : [obj.material];
+        for (const material of materials) {
+          if (!material || material === dimensionMaterial) continue;
+          material.clippingPlanes = [cutPlane];
+          material.clipShadows = true;
         }
       });
     }
+
+    function applyLayers() {
+      scene.traverse(obj => {
+        if (obj.isLineSegments && obj.material === dimensionMaterial) obj.visible = layerState.尺寸;
+        if (obj.material === wallMaterial || obj.material === wallLineMaterial) obj.visible = layerState.牆面;
+        if (obj.isCSS2DObject) {
+          for (const name of Object.keys(LAYER_CLASSES)) {
+            if (LAYER_CLASSES[name].some(c => obj.element.classList.contains(c))) obj.visible = layerState[name];
+          }
+        }
+      });
+    }
+
+    function applyCut() {
+      const h = Number(cutInput.value);
+      const ceiling = DESIGN.room.ceiling;
+      cutPlane.constant = h;
+      cutOut.textContent = h >= ceiling ? "全部" : `${h} cm 以下`;
+      scene.traverse(obj => {
+        if (!obj.isCSS2DObject) return;
+        if (obj.element.classList.contains("高度標籤")) obj.element.style.opacity = obj.position.y > h ? "0" : "";
+        if (obj.element.classList.contains("貨架標籤")) obj.position.y = Math.min(labelY(), h + LABEL_RISE);
+      });
+    }
+
+    function finishBuild(group) {
+      scene.add(group);
+      applyClip(group);
+      applyLayers();
+      applyCut();
+    }
+
     document.querySelectorAll("#圖層 button[data-layer]").forEach(button => {
       button.addEventListener("click", () => {
         const on = button.getAttribute("aria-pressed") !== "true";
         button.setAttribute("aria-pressed", String(on));
-        if (button.dataset.layer === "牆面") setWalls(on);
-        else setLayer(button.dataset.layer, on);
+        layerState[button.dataset.layer] = on;
+        applyLayers();
       });
     });
+    cutInput.addEventListener("input", applyCut);
 
-    // 牆面開關＋剖切高度＋面板
-    const cutPlane = new THREE.Plane(new THREE.Vector3(0, -1, 0), 400);
-    scene.traverse(obj => {
-      if (!(obj.isMesh || obj.isLineSegments || obj.isLine) || obj === floor || !obj.material) return;
-      const materials = Array.isArray(obj.material) ? obj.material : [obj.material];
-      for (const material of materials) {
-        if (!material || material === dimensionMaterial) continue;
-        material.clippingPlanes = [cutPlane];
-        material.clipShadows = true;
-      }
-    });
-    function setWalls(on) {
-      scene.traverse(obj => {
-        if (obj.material === wallMaterial || obj.material === wallLineMaterial) obj.visible = on;
-      });
+    // ───────────── 重建 ─────────────
+    let roomGroup = null;
+    let dimGroup = null;
+    const rackGroups = new Map();
+
+    function rebuildRoom() {
+      if (roomGroup) disposeTree(roomGroup);
+      roomGroup = buildRoom();
+      finishBuild(roomGroup);
     }
-    const cutInput = document.getElementById("剖切高度");
-    const cutOut = document.getElementById("剖切值");
-    cutInput.addEventListener("input", () => {
-      const h = Number(cutInput.value);
-      cutPlane.constant = h;
-      cutOut.textContent = h >= 400 ? "全部" : `${h} cm 以下`;
-      scene.traverse(obj => {
-        if (obj.isCSS2DObject && obj.element.classList.contains("高度標籤")) {
-          obj.element.style.opacity = obj.position.y > h ? "0" : "";
+    function rebuildDims() {
+      if (dimGroup) disposeTree(dimGroup);
+      dimGroup = buildDims();
+      finishBuild(dimGroup);
+    }
+    function rebuildRack(rack) {
+      const old = rackGroups.get(rack.id);
+      if (old) disposeTree(old);
+      const g = buildRack(rack);
+      rackGroups.set(rack.id, g);
+      finishBuild(g);
+    }
+
+    // 頁面文字（圖例、材料表、副標）也由 DESIGN 產生
+    function refreshTexts() {
+      document.getElementById("副標").textContent =
+        `單位 cm｜高度＝地板到層板上面｜板厚 ${fmt(DESIGN.boardThickness * 10)}mm`;
+
+      const legend = document.getElementById("圖例");
+      legend.querySelectorAll(".圖例列").forEach(el => el.remove());
+      for (const r of DESIGN.racks) {
+        const row = document.createElement("div");
+        row.className = "圖例列";
+        const swatch = document.createElement("span");
+        swatch.className = "色塊";
+        swatch.style.background = r.color;
+        row.append(swatch, `${r.name} ${fmt(rackLen(r))}×${fmt(rackDep(r))}（PDF ${r.pdfColor}）`);
+        legend.appendChild(row);
+      }
+
+      const tbody = document.getElementById("材料表內容");
+      tbody.textContent = "";
+      const notes = [];
+      for (const r of DESIGN.racks) {
+        const dep = rackDep(r);
+        const len = rackLen(r);
+        const sizeSame = r.stockBasis[0] === dep && r.stockBasis[1] === len;
+        const same = sizeSame && r.stockBasis[2] === r.levels.length;
+        const tr = document.createElement("tr");
+        // 未改尺寸時顯示 PDF 原字串，改過才用計算值並註明（已改）
+        for (const text of [r.name, sizeSame ? r.pdfSize : `${fmt(dep)} × ${fmt(len)}（已改）`, String(r.levels.length),
+          same ? r.stock : "尺寸已改，用板需重新估算"]) {
+          const td = document.createElement("td");
+          td.textContent = text;
+          tr.appendChild(td);
         }
-        if (obj.isCSS2DObject && obj.element.classList.contains("貨架標籤")) {
-          obj.position.y = Math.min(316, h + 16);
+        tbody.appendChild(tr);
+        if (r.seamZ !== undefined && len > DESIGN.sheetMax) {
+          notes.push(`${r.name}層板 ${fmt(len)} 長，4×8 尺板只有 ${DESIGN.sheetMax}，拼接縫在${r.seamFrom} ${fmt(r.seamZ)} cm 處（位置待現場確認）。`);
         }
-      });
-    });
+      }
+      document.getElementById("材料表註").textContent =
+        `來源：B5 小倉庫貨架層板規劃 PDF。板厚 ${fmt(DESIGN.boardThickness * 10)}mm。${notes.join("")}`;
+    }
+
+    function normalizeRack(r) {
+      const { length: L, width: W } = DESIGN.room;
+      r.x0 = clamp(r.x0, 0, Math.max(0, L - MIN_SPAN));
+      r.x1 = clamp(r.x1, r.x0 + MIN_SPAN, Math.max(r.x0 + MIN_SPAN, L));
+      r.z0 = clamp(r.z0, 0, Math.max(0, W - MIN_SPAN));
+      r.z1 = clamp(r.z1, r.z0 + MIN_SPAN, Math.max(r.z0 + MIN_SPAN, W));
+    }
+
+    function rebuildAll() {
+      rebuildRoom();
+      DESIGN.racks.forEach(rebuildRack);
+      rebuildDims();
+      refreshTexts();
+    }
+
+    // ───────────── 網址狀態（URLSearchParams＋history.replaceState） ─────────────
+    // 只寫與原設計不同的部分；R=長-寬-高，貨架 id=x0-x1-z0-z1-層高_層高_…（分隔符取 URLSearchParams 不會轉義的 - _ .）
+    const num = v => String(Math.round(v * 100) / 100);
+    function designParams() {
+      const p = new URLSearchParams();
+      const R = DESIGN.room;
+      const R0 = DEFAULT_DESIGN.room;
+      if (R.length !== R0.length || R.width !== R0.width || R.ceiling !== R0.ceiling) {
+        p.set("R", [R.length, R.width, R.ceiling].map(num).join("-"));
+      }
+      for (const r of DESIGN.racks) {
+        const d = DEFAULT_DESIGN.racks.find(x => x.id === r.id);
+        const mine = [r.x0, r.x1, r.z0, r.z1].map(num).join("-") + "-" + r.levels.map(num).join("_");
+        const base = [d.x0, d.x1, d.z0, d.z1].map(num).join("-") + "-" + d.levels.map(num).join("_");
+        if (mine !== base) p.set(r.id, mine);
+      }
+      return p;
+    }
+
+    function syncUrl() {
+      const qs = designParams().toString();
+      const keepDebug = new URLSearchParams(location.search).has("debug") ? "debug" : "";
+      const full = [qs, keepDebug].filter(Boolean).join("&");
+      try {
+        history.replaceState(null, "", `${location.pathname}${full ? "?" + full : ""}${location.hash}`);
+      } catch (e) {
+        console.warn("replaceState 失敗", e);
+      }
+    }
+    let urlTimer = 0;
+    function scheduleUrlSync() {
+      clearTimeout(urlTimer);
+      urlTimer = setTimeout(syncUrl, 250);
+    }
+
+    const parseNums = (s, sep) => s.split(sep).map(Number);
+    const okNum = (v, hi) => Number.isFinite(v) && v >= 0 && v <= hi;
+    function applyParams(p) {
+      const R = p.get("R");
+      if (R) {
+        const v = parseNums(R, "-");
+        if (v.length === 3 && v.every(x => okNum(x, 2000)) && v[0] >= 50 && v[1] >= 50 && v[2] >= 50) {
+          [DESIGN.room.length, DESIGN.room.width, DESIGN.room.ceiling] = v;
+        }
+      }
+      for (const r of DESIGN.racks) {
+        const s = p.get(r.id);
+        if (!s) continue;
+        const parts = s.split("-");
+        if (parts.length !== 5) continue;
+        const box = parts.slice(0, 4).map(Number);
+        const levels = parseNums(parts[4], "_");
+        if (!box.every(x => okNum(x, 2000))) continue;
+        if (levels.length < 1 || levels.length > MAX_LEVELS || !levels.every(x => okNum(x, 1000))) continue;
+        [r.x0, r.x1, r.z0, r.z1] = box;
+        r.levels = levels;
+        normalizeRack(r);
+      }
+    }
+    const MAX_LEVELS = 10;
+
+    function restoreDefaults() {
+      DESIGN.room = { ...DEFAULT_DESIGN.room };
+      DESIGN.racks.forEach((r, i) => { DESIGN.racks[i] = JSON.parse(JSON.stringify(DEFAULT_DESIGN.racks[i])); });
+    }
+
+    // ───────────── 面板按鈕（材料表） ─────────────
     function togglePanel(id, on) {
       document.getElementById(id).hidden = !on;
-      const btn = document.getElementById(id === "材料表" ? "開材料表" : "開AR");
-      btn.setAttribute("aria-pressed", String(on));
+      const btn = document.getElementById("開材料表");
+      btn.setAttribute("aria-expanded", String(on));
+      if (on) document.getElementById(id).querySelector(".關閉").focus();
+      else btn.focus();
     }
+    // Esc 關閉目前開著的面板（WAI-ARIA APG Dialog：Escape closes the dialog）
+    document.addEventListener("keydown", e => {
+      if (e.key !== "Escape") return;
+      if (!document.getElementById("材料表").hidden) togglePanel("材料表", false);
+    });
     document.getElementById("開材料表").addEventListener("click", () => togglePanel("材料表", document.getElementById("材料表").hidden));
-    document.getElementById("開AR").addEventListener("click", () => togglePanel("AR面板", document.getElementById("AR面板").hidden));
     document.querySelectorAll(".關閉").forEach(b => b.addEventListener("click", () => togglePanel(b.dataset.close, false)));
-    window.__b5scene = scene;
+
+    // ───────────── lil-gui 調整面板 ─────────────
+    const prox = (get, set) => ({ get v() { return get(); }, set v(x) { set(x); } });
+    const gui = new GUI({ container: document.getElementById("調整面板"), title: "調整尺寸" });
+    const rangeCtrls = []; // [controller, () => max]
+    const rackFolders = new Map();
+    const levelFolders = new Map();
+
+    function afterChange(rack) {
+      if (rack) {
+        normalizeRack(rack);
+        rebuildRack(rack);
+      }
+      rebuildDims();
+      refreshTexts();
+      scheduleUrlSync();
+      rackFolders.forEach(f => f.controllersRecursive().forEach(c => c.updateDisplay()));
+    }
+
+    function buildLevelControls(id) {
+      levelFolders.get(id)?.destroy();
+      const rack = rackById(id);
+      const folder = rackFolders.get(id).addFolder("各層高度（地板到板面）");
+      levelFolders.set(id, folder);
+      rack.levels.forEach((_, i) => {
+        folder.add(prox(() => rackById(id).levels[i], v => { rackById(id).levels[i] = v; }), "v", 5, DESIGN.rackHeight, 1)
+          .name(`第 ${i + 1} 層`)
+          .onChange(() => afterChange(rackById(id)));
+      });
+    }
+
+    function setLevelCount(rack, n) {
+      const lv = rack.levels;
+      while (lv.length > n) lv.pop();
+      while (lv.length < n) {
+        const sorted = [...lv].sort((a, b) => a - b);
+        const top = sorted[sorted.length - 1] ?? 0;
+        const step = sorted.length >= 2 ? top - sorted[sorted.length - 2] : 60;
+        let v = top + step;
+        if (!(v > top && v <= DESIGN.rackHeight)) {
+          // 頂端放不下：取最大空隙的中點
+          const pts = [0, ...sorted, DESIGN.rackHeight];
+          let best = 0;
+          for (let i = 1; i < pts.length - 1; i++) if (pts[i + 1] - pts[i] > pts[best + 1] - pts[best]) best = i;
+          v = Math.round((pts[best] + pts[best + 1]) / 2);
+        }
+        lv.push(v);
+      }
+    }
+
+    function addRackFolder(rack) {
+      const id = rack.id;
+      const R = () => rackById(id);
+      const folder = gui.addFolder(rack.name);
+      folder.close();
+      rackFolders.set(id, folder);
+      const L = () => DESIGN.room.length;
+      const W = () => DESIGN.room.width;
+      const add = (get, set, name, max, step) => {
+        const c = folder.add(prox(get, set), "v", 0, max(), step).name(name).onChange(() => afterChange(R()));
+        rangeCtrls.push([c, max]);
+        return c;
+      };
+      add(() => R().x0, v => { R().x0 = v; }, "X 起點 x0", L, 0.5);
+      add(() => R().x1, v => { R().x1 = v; }, "X 終點 x1（長）", L, 0.5);
+      add(() => R().z1 - R().z0, v => { R().z1 = R().z0 + v; }, "Z 深（z1−z0）", W, 0.5);
+      folder.add(prox(() => R().levels.length, v => { setLevelCount(R(), Math.round(v)); }), "v", 1, MAX_LEVELS, 1)
+        .name("層數")
+        .onChange(() => { buildLevelControls(id); afterChange(R()); });
+      buildLevelControls(id);
+    }
+
+    const actions = {
+      copy() {
+        syncUrl();
+        const done = () => { shareCtrl.name("已複製 ✓"); setTimeout(() => shareCtrl.name("複製分享網址"), 1600); };
+        if (navigator.clipboard?.writeText) navigator.clipboard.writeText(location.href).then(done, () => prompt("複製這個網址", location.href));
+        else prompt("複製這個網址", location.href);
+      },
+      reset() {
+        restoreDefaults();
+        rebuildAll();
+        refreshGui();
+        applyCut();
+        syncUrl();
+      }
+    };
+    const shareCtrl = gui.add(actions, "copy").name("複製分享網址");
+    gui.add(actions, "reset").name("還原原設計");
+    const roomFolder = gui.addFolder("房間");
+    roomFolder.close();
+    const roomNote = document.createElement("div");
+    roomNote.className = "面板說明";
+    roomNote.textContent = "縮小房間不會自動移動貨架";
+    roomFolder.$children.appendChild(roomNote);
+    for (const [key, label, min, max] of [["length", "長（X）", 100, 1000], ["width", "寬（Z）", 100, 600], ["ceiling", "天花板高", 150, 600]]) {
+      roomFolder.add(prox(() => DESIGN.room[key], v => { DESIGN.room[key] = v; }), "v", min, max, 1)
+        .name(label)
+        .onChange(() => {
+          const prevAll = Number(cutInput.value) >= Number(cutInput.max);
+          cutInput.max = String(DESIGN.room.ceiling);
+          cutInput.value = String(prevAll ? DESIGN.room.ceiling : Math.min(Number(cutInput.value), DESIGN.room.ceiling));
+          rebuildRoom();
+          afterChange(null);
+          rangeCtrls.forEach(([c, m]) => c.max(m()));
+        });
+    }
+    DESIGN.racks.forEach(addRackFolder);
+
+    function refreshGui() {
+      DESIGN.racks.forEach(r => buildLevelControls(r.id));
+      rangeCtrls.forEach(([c, m]) => c.max(m()));
+      gui.controllersRecursive().forEach(c => c.updateDisplay());
+      cutInput.max = String(DESIGN.room.ceiling);
+      cutInput.value = String(DESIGN.room.ceiling);
+    }
+
+    // 面板位置：量測左側同欄的既有元件，排在它們下面、圖例／前進後退按鈕上面，避免重疊
+    function layoutGui() {
+      const host = document.getElementById("調整面板");
+      const hr = host.getBoundingClientRect();
+      const rectOf = id => document.getElementById(id).getBoundingClientRect();
+      const sameColumn = r => r.right > hr.left && r.left < hr.right;
+      let top = 0;
+      for (const id of ["標題區", "視角按鈕", "圖層"]) {
+        const r = rectOf(id);
+        if (sameColumn(r)) top = Math.max(top, r.bottom);
+      }
+      top += 8;
+      let bottom = innerHeight - 12;
+      for (const id of ["圖例", "移動"]) {
+        const r = rectOf(id);
+        if (sameColumn(r)) bottom = Math.min(bottom, r.top - 8);
+      }
+      host.style.top = `${top}px`;
+      host.style.maxHeight = `${Math.max(80, bottom - top)}px`;
+    }
+    addEventListener("resize", layoutGui);
+    // 展開調整面板時收起操作提示，避免兩者疊在一起
+    const hideHintWhenOpen = () => { if (!gui._closed) document.getElementById("操作提示").hidden = true; };
+    gui.$title.addEventListener("click", hideHintWhenOpen);
+    gui.$title.addEventListener("keydown", e => { if (e.code === "Enter" || e.code === "Space") hideHintWhenOpen(); });
+    if (matchMedia("(max-width: 680px)").matches) gui.close();
+
+    // ───────────── 啟動：讀網址 → 建場景 ─────────────
+    applyParams(new URLSearchParams(location.search));
+    if (cutInput) {
+      cutInput.max = String(DESIGN.room.ceiling);
+      cutInput.value = String(DESIGN.room.ceiling);
+    }
+    // 網址若改過尺寸，GUI 控制項要同步顯示
+    rebuildAll();
+    refreshGui();
+    controls.target.copy(roomCenter());
+    layoutGui();
+    document.fonts?.ready.then(layoutGui);
+
+    if (new URLSearchParams(location.search).has("debug")) {
+      window.__b5scene = scene;
+      window.__b5 = { DESIGN, DEFAULT_DESIGN, renderer, scene, gui, designParams, rackGroups, afterChange };
+    }
 
     let transition = null;
 
     function threeDView() {
       const portraitScale = camera.aspect < 0.8 ? 1.62 : 1;
-      const target = new THREE.Vector3(265, 115, 125.5);
+      const target = roomCenter();
       const direction = new THREE.Vector3(0.72, 0.63, 0.88).normalize();
       const distance = 760 * portraitScale;
       return {
@@ -886,12 +1168,13 @@
 
     function topView() {
       const halfFov = THREE.MathUtils.degToRad(camera.fov / 2);
-      const fitDepth = 310 / Math.tan(halfFov);
-      const fitWidth = 610 / (2 * Math.tan(halfFov) * camera.aspect);
+      const fitDepth = (DESIGN.room.width + 59) / Math.tan(halfFov);
+      const fitWidth = (DESIGN.room.length + 80) / (2 * Math.tan(halfFov) * camera.aspect);
       const height = Math.max(760, fitDepth, fitWidth) * 1.08;
+      const c = roomCenter();
       return {
-        position: new THREE.Vector3(265, height, 125.5),
-        target: new THREE.Vector3(265, 0, 125.5),
+        position: new THREE.Vector3(c.x, height, c.z),
+        target: new THREE.Vector3(c.x, 0, c.z),
         up: new THREE.Vector3(0, 0, -1)
       };
     }

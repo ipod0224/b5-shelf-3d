@@ -121,6 +121,43 @@
       outline: 3px solid #f0b400;
       outline-offset: 2px;
     }
+    #剖切 {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      color: #4c5965;
+      font-weight: 700;
+    }
+    #剖切 input { width: 110px; }
+    #材料表, #AR面板 {
+      position: fixed;
+      z-index: 30;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      width: min(560px, calc(100vw - 32px));
+      max-height: calc(100vh - 120px);
+      overflow: auto;
+      padding: 14px 16px;
+      border-radius: 12px;
+      background: #fff;
+      color: #18212b;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, .3);
+    }
+    #材料表 h2, #AR面板 h2 { margin: 0 0 8px; font-size: 17px; }
+    #材料表 table { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+    #材料表 th, #材料表 td { padding: 6px 4px; border-bottom: 1px solid #e3e8ec; text-align: left; }
+    #材料表 p, #AR面板 p { margin: 8px 0 0; color: #4c5965; font-size: 12px; }
+    .關閉 {
+      float: right;
+      padding: 4px 10px;
+      border: 1px solid #aab4bd;
+      border-radius: 8px;
+      background: #fff;
+      font: inherit;
+      cursor: pointer;
+    }
+    #AR面板 model-viewer { width: 100%; height: min(60vh, 420px); background: #eef3f6; border-radius: 8px; }
     #移動 {
       position: fixed;
       z-index: 20;
@@ -162,8 +199,16 @@
       max-width: 40vw;
     }
     @media (max-width: 700px) {
+      #圖層 {
+        flex-wrap: nowrap;
+        justify-content: flex-start;
+        overflow-x: auto;
+        left: max(12px, env(safe-area-inset-left));
+        right: max(12px, env(safe-area-inset-right));
+      }
+      #圖層 > * { flex: 0 0 auto; }
       #操作提示 {
-        top: calc(max(12px, env(safe-area-inset-top)) + 188px);
+        top: calc(max(12px, env(safe-area-inset-top)) + 212px);
         bottom: auto;
         max-width: calc(100vw - 32px);
         width: max-content;
@@ -274,6 +319,7 @@
     }
   </style>
 
+  <script async src="https://cdn.jsdelivr.net/npm/es-module-shims@2.8.4/dist/es-module-shims.js"></script>
   <script type="importmap">
     {
       "imports": {
@@ -300,7 +346,43 @@
     <button type="button" data-layer="尺寸" aria-pressed="true">尺寸線</button>
     <button type="button" data-layer="層高" aria-pressed="true">層板高度</button>
     <button type="button" data-layer="名稱" aria-pressed="true">貨架名稱</button>
+    <button type="button" data-layer="牆面" aria-pressed="true">牆面</button>
+    <label id="剖切" for="剖切高度">剖切 <input id="剖切高度" type="range" min="20" max="400" step="5" value="400"> <output id="剖切值">全部</output></label>
+    <button type="button" id="開材料表" aria-pressed="false">材料表</button>
+    <button type="button" id="開AR" aria-pressed="false">AR 實景</button>
   </div>
+  <section id="材料表" hidden aria-label="材料表">
+    <button type="button" class="關閉" data-close="材料表">關閉</button>
+    <h2>層板材料表</h2>
+    <table>
+      <thead><tr><th>貨架</th><th>層板尺寸 cm</th><th>片數</th><th>用板</th></tr></thead>
+      <tbody>
+        <tr><td>A 架</td><td>77 × 186</td><td>4</td><td>3×7 尺（91×212）4 張</td></tr>
+        <tr><td>B 架</td><td>77 × 203</td><td>4</td><td>3×7 尺（91×212）4 張</td></tr>
+        <tr><td>C 小格</td><td>60 × 49</td><td>3</td><td>3×6 尺（91×182）1 張</td></tr>
+        <tr><td>D 架</td><td>76 × 251</td><td>5</td><td>4×8 尺（122×244）5 張＋拼接</td></tr>
+        <tr><td>E 架</td><td>82 × 225.5</td><td>4</td><td>4×8 尺（122×244）4 張</td></tr>
+      </tbody>
+    </table>
+    <p>來源：B5 小倉庫貨架層板規劃 PDF。板厚 6mm。D 架層板 251 長，4×8 尺板只有 244，每片在離門那側牆 7 cm 處拼接。</p>
+  </section>
+
+  <section id="AR面板" hidden aria-label="AR 實景">
+    <button type="button" class="關閉" data-close="AR面板">關閉</button>
+    <h2>AR 實景（1:1 實際大小）</h2>
+    <model-viewer id="AR模型" src="b5-shelves.glb" ar ar-modes="webxr scene-viewer quick-look" ar-scale="fixed" camera-controls touch-action="pan-y" shadow-intensity="1" alt="B5 貨架 1:1 模型"></model-viewer>
+    <p>按右下角 AR 圖示，手機鏡頭對準地板，把模型移到倉庫裡對位。只有貨架，沒有尺寸文字。需支援 AR 的手機：Android 需 ARCore；iPhone 建議 iOS 16.4 以上，較舊版本未實機驗證，可能無法使用。</p>
+  </section>
+
+  <script>
+    document.getElementById("AR模型").addEventListener("error", () => {
+      const note = document.createElement("p");
+      note.textContent = "AR 模型載入失敗，請確認網路後重新整理。";
+      note.style.color = "#b42318";
+      document.getElementById("AR面板").appendChild(note);
+    }, { once: true });
+  </script>
+
   <div id="移動">
     <button type="button" id="前進" aria-label="鏡頭往前">▲ 前進</button>
     <button type="button" id="後退" aria-label="鏡頭往後">▼ 後退</button>
@@ -316,6 +398,7 @@
     <div class="圖例列"><span class="色塊" style="background:#d7263d"></span>E 架 225.5×82（PDF 橘）</div>
   </aside>
 
+  <script type="module" src="https://cdn.jsdelivr.net/npm/@google/model-viewer@3.5.0/dist/model-viewer.min.js"></script>
   <script type="module">
     import * as THREE from "three";
     import { OrbitControls } from "three/addons/controls/OrbitControls.js";
@@ -332,6 +415,7 @@
     renderer.setSize(innerWidth, innerHeight);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.shadowMap.enabled = true;
+    renderer.localClippingEnabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     app.appendChild(renderer.domElement);
 
@@ -557,6 +641,7 @@
         );
         board.castShadow = true;
         board.receiveShadow = true;
+        board.userData.rack = true;
         scene.add(board);
 
         const edges = new THREE.LineSegments(
@@ -564,6 +649,7 @@
           edgeMaterial
         );
         edges.position.copy(board.position);
+        edges.userData.rack = true;
         scene.add(edges);
 
         addLabel(
@@ -605,6 +691,7 @@
         post.position.set(x, 150, z);
         post.castShadow = true;
         post.receiveShadow = true;
+        post.userData.rack = true;
         scene.add(post);
       }
 
@@ -733,13 +820,55 @@
         }
       });
     }
-    document.querySelectorAll("#圖層 button").forEach(button => {
+    document.querySelectorAll("#圖層 button[data-layer]").forEach(button => {
       button.addEventListener("click", () => {
         const on = button.getAttribute("aria-pressed") !== "true";
         button.setAttribute("aria-pressed", String(on));
-        setLayer(button.dataset.layer, on);
+        if (button.dataset.layer === "牆面") setWalls(on);
+        else setLayer(button.dataset.layer, on);
       });
     });
+
+    // 牆面開關＋剖切高度＋面板
+    const cutPlane = new THREE.Plane(new THREE.Vector3(0, -1, 0), 400);
+    scene.traverse(obj => {
+      if (!(obj.isMesh || obj.isLineSegments || obj.isLine) || obj === floor || !obj.material) return;
+      const materials = Array.isArray(obj.material) ? obj.material : [obj.material];
+      for (const material of materials) {
+        if (!material || material === dimensionMaterial) continue;
+        material.clippingPlanes = [cutPlane];
+        material.clipShadows = true;
+      }
+    });
+    function setWalls(on) {
+      scene.traverse(obj => {
+        if (obj.material === wallMaterial || obj.material === wallLineMaterial) obj.visible = on;
+      });
+    }
+    const cutInput = document.getElementById("剖切高度");
+    const cutOut = document.getElementById("剖切值");
+    cutInput.addEventListener("input", () => {
+      const h = Number(cutInput.value);
+      cutPlane.constant = h;
+      cutOut.textContent = h >= 400 ? "全部" : `${h} cm 以下`;
+      scene.traverse(obj => {
+        if (obj.isCSS2DObject && obj.element.classList.contains("高度標籤")) {
+          obj.element.style.opacity = obj.position.y > h ? "0" : "";
+        }
+        if (obj.isCSS2DObject && obj.element.classList.contains("貨架標籤")) {
+          obj.position.y = Math.min(316, h + 16);
+        }
+      });
+    });
+    function togglePanel(id, on) {
+      document.getElementById(id).hidden = !on;
+      const btn = document.getElementById(id === "材料表" ? "開材料表" : "開AR");
+      btn.setAttribute("aria-pressed", String(on));
+    }
+    document.getElementById("開材料表").addEventListener("click", () => togglePanel("材料表", document.getElementById("材料表").hidden));
+    document.getElementById("開AR").addEventListener("click", () => togglePanel("AR面板", document.getElementById("AR面板").hidden));
+    document.querySelectorAll(".關閉").forEach(b => b.addEventListener("click", () => togglePanel(b.dataset.close, false)));
+    window.__b5scene = scene;
 
     let transition = null;
 

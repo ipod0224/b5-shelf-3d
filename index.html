@@ -201,13 +201,11 @@
     }
     @media (max-width: 700px) {
       #圖層 {
-        flex-wrap: nowrap;
+        flex-wrap: wrap;
         justify-content: flex-start;
-        overflow-x: auto;
         left: max(12px, env(safe-area-inset-left));
         right: max(12px, env(safe-area-inset-right));
       }
-      #圖層 > * { flex: 0 0 auto; }
       #操作提示 {
         top: calc(max(12px, env(safe-area-inset-top)) + 248px);
         bottom: auto;
@@ -306,6 +304,9 @@
     }
     #調整面板 .lil-gui.root { --width: min(260px, calc(100vw - 24px)); }
     .面板說明 { padding: 4px 8px 6px; font-size: 11px; color: #b0b0b0; }
+    .狀態列 { white-space: pre-line; color: #e0e0e0; }
+    #最後編輯 { margin-top: 2px; }
+    #調整面板 .lil-gui .title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     @media (max-width: 680px) {
       #調整面板 {
         top: calc(max(12px, env(safe-area-inset-top)) + 196px);
@@ -348,7 +349,8 @@
 
   <header id="標題區">
     <h1>B5 小倉庫貨架 3D 圖</h1>
-    <p id="副標">單位 cm｜高度＝地板到層板上面｜板厚 6mm</p>
+    <p id="副標">單位 cm｜第1層＝地板到板面，其餘＝層與層板面間距｜板厚 6mm</p>
+    <p id="最後編輯">最後編輯：—</p>
   </header>
 
   <nav id="視角按鈕" aria-label="視角切換">
@@ -394,8 +396,26 @@
     import { CSS2DRenderer, CSS2DObject } from "three/addons/renderers/CSS2DRenderer.js";
     import GUI from "three/addons/libs/lil-gui.module.min.js";
 
+    // ───────────── 雲端存檔（PocketBase，Mac 上的共用存檔） ─────────────
+    const SYNC_URL = "https://b5-sync.sdwm.com.tw";
+    const PB_SDK_URL = "https://cdn.jsdelivr.net/npm/pocketbase@0.28.1/dist/pocketbase.es.mjs";
+    const SYNC_RECORD = "b5warehouse0001";
+    // 允許範圍：GUI、網址參數、雲端讀入、寫回前檢查四處共用（後端驗證也用同一組數字）
+    // ==== LIMITS BEGIN ====
+    const LIMITS = {
+      room: { length: { min: 100, max: 1000 }, width: { min: 100, max: 600 }, ceiling: { min: 150, max: 600 } },
+      rackHeight: 300,
+      minSpan: 5,
+      minLevelGap: 1,
+      maxLevels: 10,
+      maxDataBytes: 20480
+    };
+    // ==== LIMITS END ====
+    const cloud = { pb: null, status: "connecting", urlOverride: false, edited: false, notice: "", saveTimer: 0, saving: false, updated: "", newer: false, rejected: [], paused: false, rev: 0 };
+
     // ───────────── 單一資料源：所有尺寸、貨架、標籤、材料表、尺寸線都由此產生 ─────────────
-    const DESIGN = {
+    // ==== DEFAULT_DESIGN BEGIN ====
+    const DEFAULT_DESIGN = {
       room: { length: 530, width: 251, ceiling: 400 },
       boardThickness: 0.6,
       rackHeight: 300,
@@ -403,55 +423,58 @@
       door: { x0: 0, x1: 90, swing: "out", height: 210, labelOffset: { x: 38, z: 71 } },
       racks: [
         {
-          id: "A", name: "A 架", color: "#0072b2", pdfColor: "紅", axis: "x",
+          id: "A", name: "A 架", color: "#0072b2", pdfColor: "紅", axis: "x", prev: null, zFrom: "z0",
           x0: 0, x1: 186, z0: 0, z1: 77, levels: [81, 141, 201, 261],
           hl: { dx: 7, zRef: "z1", dz: 7 },
           pdfSize: "77 × 186",
           stock: "3×7 尺（91×212）4 張", stockBasis: [77, 186, 4]
         },
         {
-          id: "B", name: "B 架", color: "#e69f00", pdfColor: "紅", axis: "x",
+          id: "B", name: "B 架", color: "#e69f00", pdfColor: "紅", axis: "x", prev: "A", zFrom: "z0",
           x0: 186, x1: 389, z0: 0, z1: 77, levels: [81, 141, 201, 261],
           hl: { dx: 7, zRef: "z1", dz: 7 },
           pdfSize: "77 × 203",
           stock: "3×7 尺（91×212）4 張", stockBasis: [77, 203, 4]
         },
         {
-          id: "C", name: "C 小格", color: "#cc79a7", pdfColor: "紅", axis: "x",
+          id: "C", name: "C 小格", color: "#cc79a7", pdfColor: "紅", axis: "x", prev: "B", zFrom: "z0",
           x0: 389, x1: 449, z0: 0, z1: 49, levels: [81, 168, 261],
           hl: { dx: 6, zRef: "z1", dz: 7 },
           pdfSize: "60 × 49",
           stock: "3×6 尺（91×182）1 張", stockBasis: [49, 60, 3]
         },
         {
-          id: "D", name: "D 架", color: "#009e73", pdfColor: "綠", axis: "z",
+          id: "D", name: "D 架", color: "#009e73", pdfColor: "綠", axis: "z", prev: "C", zFrom: "z0",
           x0: 454, x1: 530, z0: 0, z1: 251, levels: [61, 121, 181, 241, 300], seamZ: 7, seamFrom: "離 A／B 架那側牆",
           hl: { dx: -7, zRef: 0, dz: 20 },
           pdfSize: "76 × 251",
           stock: "4×8 尺（122×244）5 張＋拼接", stockBasis: [76, 251, 5]
         },
         {
-          id: "E", name: "E 架", color: "#d7263d", pdfColor: "橘", axis: "x",
+          id: "E", name: "E 架", color: "#d7263d", pdfColor: "橘", axis: "x", prev: null, zFrom: "z1",
           x0: 163.5, x1: 389, z0: 169, z1: 251, levels: [81, 141, 201, 261],
           hl: { dx: 6.5, zRef: "z0", dz: -7 },
           pdfSize: "82 × 225.5",
           stock: "4×8 尺（122×244）4 張", stockBasis: [82, 225.5, 4]
         }
       ],
-      // 尺寸線：axis "z"＝沿 Z 方向量（線在 X=at），axis "x"＝沿 X 方向量（線在 Z=at）。端點可為數字或 {rack, edge}
-      dims: [
-        { axis: "z", at: 420, from: { rack: "B", edge: "z1" }, to: { rack: "E", edge: "z0" }, tick: 6, text: "走道 ", labelDz: 0 },
-        { axis: "x", at: 58, from: { rack: "C", edge: "x1" }, to: { rack: "D", edge: "x0" }, tick: 4, text: "間隙 ", labelDz: 10 },
-        { axis: "x", at: 238, from: 0, to: { rack: "E", edge: "x0" }, tick: 5, text: "", labelDz: 0 }
+      // 連續尺寸線：沿同一方向把「牆→貨架→間隙→貨架→…→牆」一段一段標出，不標累加座標
+      // axis "x"＝沿 X；axis "z"＝沿 Z。anchor：z0＝線在 Z=−offset，zW＝線在 Z=房間寬+offset，x0＝線在 X=−offset
+      dimChains: [
+        { axis: "x", anchor: "z0", offset: 44, racks: ["A", "B", "C", "D"], gapText: "間隙 ", tick: 5 },
+        { axis: "x", anchor: "zW", offset: 18, racks: ["E"], gapText: "間隙 ", tick: 5 },
+        { axis: "z", anchor: "x0", offset: 44, racks: ["A", "E"], gapText: "走道 ", tick: 5 }
       ]
     };
-    const DEFAULT_DESIGN = JSON.parse(JSON.stringify(DESIGN));
+    // ==== DEFAULT_DESIGN END ====
+    // 執行時使用的設計物件：由 DEFAULT_DESIGN 複製而來，之後可被 GUI、網址、雲端資料改動
+    const DESIGN = JSON.parse(JSON.stringify(DEFAULT_DESIGN));
     const fmt = n => String(Math.round(n * 100) / 100);
     const rackById = id => DESIGN.racks.find(r => r.id === id);
     const rackLen = r => (r.axis === "z" ? r.z1 - r.z0 : r.x1 - r.x0);
     const rackDep = r => (r.axis === "z" ? r.x1 - r.x0 : r.z1 - r.z0);
     const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
-    const MIN_SPAN = 5;
+    const MIN_SPAN = LIMITS.minSpan;
     const LABEL_RISE = 16; // 貨架名稱標籤浮在貨架頂端上方的高度
     const labelY = () => DESIGN.rackHeight + LABEL_RISE;
 
@@ -671,7 +694,7 @@
       const hlz = (hl.zRef ? rack[hl.zRef] : 0) + hl.dz;
       const needSeam = rack.seamZ !== undefined && rackLen(rack) > DESIGN.sheetMax;
 
-      for (const height of rack.levels) {
+      for (const [li, height] of rack.levels.entries()) {
         const geometry = new THREE.BoxGeometry(rack.x1 - rack.x0, t, rack.z1 - rack.z0);
         const board = new THREE.Mesh(geometry, boardMaterial);
         board.position.set((rack.x0 + rack.x1) / 2, height - t / 2, (rack.z0 + rack.z1) / 2);
@@ -685,7 +708,7 @@
         edges.userData.rack = true;
         g.add(edges);
 
-        addLabel(g, fmt(height), hlx, height + 2, hlz, "高度標籤");
+        addLabel(g, `第${li + 1}層 ${fmt(height - (li > 0 ? rack.levels[li - 1] : 0))}`, hlx, height + 2, hlz, "高度標籤");
 
         if (needSeam) {
           g.add(new THREE.Line(
@@ -726,8 +749,22 @@
     }
 
     // ───────────── 尺寸線（依貨架／房間位置算出） ─────────────
-    function resolveEnd(end) {
-      return typeof end === "number" ? end : rackById(end.rack)[end.edge];
+    // 把一條連續尺寸鏈切成逐段：[{a, b, text, gap}]，a／b 是沿線座標（只在畫圖時用，不顯示）
+    function chainPieces(chain) {
+      const lo = r => (chain.axis === "x" ? r.x0 : r.z0);
+      const hi = r => (chain.axis === "x" ? r.x1 : r.z1);
+      const end = chain.axis === "x" ? DESIGN.room.length : DESIGN.room.width;
+      const pieces = [];
+      let cursor = 0;
+      for (const r of chain.racks.map(rackById)) {
+        if (lo(r) - cursor > 1e-6) {
+          pieces.push({ a: cursor, b: lo(r), text: (cursor > 0 ? chain.gapText : "") + fmt(lo(r) - cursor), gap: cursor > 0 });
+        }
+        pieces.push({ a: lo(r), b: hi(r), text: fmt(hi(r) - lo(r)), gap: false });
+        cursor = hi(r);
+      }
+      if (end - cursor > 1e-6) pieces.push({ a: cursor, b: end, text: fmt(end - cursor), gap: false });
+      return pieces;
     }
 
     function buildDims() {
@@ -745,21 +782,20 @@
       dimensionLine([-18, 0.8, 0], [-18, 0.8, W], [-24, 0.8, 0], [-12, 0.8, 0], [-24, 0.8, W], [-12, 0.8, W]);
       addLabel(g, `房間寬 ${fmt(W)}`, -18, 3, W / 2, "尺寸標籤");
 
-      for (const dim of DESIGN.dims) {
-        const a = resolveEnd(dim.from);
-        const b = resolveEnd(dim.to);
-        const mid = (a + b) / 2;
-        const text = `${dim.text}${fmt(Math.abs(b - a))}`;
-        if (dim.axis === "z") {
-          dimensionLine([dim.at, 0.8, a], [dim.at, 0.8, b],
-            [dim.at - dim.tick, 0.8, a], [dim.at + dim.tick, 0.8, a],
-            [dim.at - dim.tick, 0.8, b], [dim.at + dim.tick, 0.8, b]);
-          addLabel(g, text, dim.at, 3, mid + dim.labelDz, "地面標籤");
-        } else {
-          dimensionLine([a, 0.8, dim.at], [b, 0.8, dim.at],
-            [a, 0.8, dim.at - dim.tick], [a, 0.8, dim.at + dim.tick],
-            [b, 0.8, dim.at - dim.tick], [b, 0.8, dim.at + dim.tick]);
-          addLabel(g, text, mid, 3, dim.at + dim.labelDz, "地面標籤");
+      for (const chain of DESIGN.dimChains) {
+        const at = chain.anchor === "zW" ? W + chain.offset : -chain.offset;
+        for (const pc of chainPieces(chain)) {
+          const mid = (pc.a + pc.b) / 2;
+          const t = chain.tick;
+          if (chain.axis === "z") {
+            dimensionLine([at, 0.8, pc.a], [at, 0.8, pc.b],
+              [at - t, 0.8, pc.a], [at + t, 0.8, pc.a], [at - t, 0.8, pc.b], [at + t, 0.8, pc.b]);
+            addLabel(g, pc.text, at, 3, mid, "地面標籤");
+          } else {
+            dimensionLine([pc.a, 0.8, at], [pc.b, 0.8, at],
+              [pc.a, 0.8, at - t], [pc.a, 0.8, at + t], [pc.b, 0.8, at - t], [pc.b, 0.8, at + t]);
+            addLabel(g, pc.text, mid, 3, at + (pc.gap ? -10 : 0), "地面標籤");
+          }
         }
       }
       return g;
@@ -855,7 +891,7 @@
     // 頁面文字（圖例、材料表、副標）也由 DESIGN 產生
     function refreshTexts() {
       document.getElementById("副標").textContent =
-        `單位 cm｜高度＝地板到層板上面｜板厚 ${fmt(DESIGN.boardThickness * 10)}mm`;
+        `單位 cm｜第1層＝地板到板面，其餘＝層與層板面間距｜板厚 ${fmt(DESIGN.boardThickness * 10)}mm`;
 
       const legend = document.getElementById("圖例");
       legend.querySelectorAll(".圖例列").forEach(el => el.remove());
@@ -891,11 +927,11 @@
         }
       }
       document.getElementById("材料表註").textContent =
-        `來源：B5 小倉庫貨架層板規劃 PDF。板厚 ${fmt(DESIGN.boardThickness * 10)}mm。${notes.join("")}`;
+        `來源：B5 小倉庫貨架層板規劃 PDF。板厚 ${fmt(DESIGN.boardThickness * 10)}mm。各段尺寸為逐段量測，總長以房間 ${fmt(DESIGN.room.length)} 為準。${notes.join("")}`;
     }
 
-    function normalizeRack(r) {
-      const { length: L, width: W } = DESIGN.room;
+    function normalizeRack(r, room = DESIGN.room) {
+      const { length: L, width: W } = room;
       r.x0 = clamp(r.x0, 0, Math.max(0, L - MIN_SPAN));
       r.x1 = clamp(r.x1, r.x0 + MIN_SPAN, Math.max(r.x0 + MIN_SPAN, L));
       r.z0 = clamp(r.z0, 0, Math.max(0, W - MIN_SPAN));
@@ -928,51 +964,162 @@
       return p;
     }
 
-    function syncUrl() {
-      const qs = designParams().toString();
+    // 網址只在「雲端未連線」時自動更新；雲端連線時網址參數只用來分享特定版本
+    function urlWithDesign(qs) {
       const keepDebug = new URLSearchParams(location.search).has("debug") ? "debug" : "";
       const full = [qs, keepDebug].filter(Boolean).join("&");
+      return `${location.pathname}${full ? "?" + full : ""}${location.hash}`;
+    }
+    function syncUrl() {
       try {
-        history.replaceState(null, "", `${location.pathname}${full ? "?" + full : ""}${location.hash}`);
+        history.replaceState(null, "", urlWithDesign(designParams().toString()));
+      } catch (e) {
+        console.warn("replaceState 失敗", e);
+      }
+    }
+    function clearDesignParams() {
+      try {
+        history.replaceState(null, "", urlWithDesign(""));
       } catch (e) {
         console.warn("replaceState 失敗", e);
       }
     }
     let urlTimer = 0;
     function scheduleUrlSync() {
+      if (cloud.status !== "offline") return;
       clearTimeout(urlTimer);
       urlTimer = setTimeout(syncUrl, 250);
     }
 
-    const parseNums = (s, sep) => s.split(sep).map(Number);
-    const okNum = (v, hi) => Number.isFinite(v) && v >= 0 && v <= hi;
-    function applyParams(p) {
+    // ───────────── 資料驗證（網址、雲端讀入、寫回前共用；輸入一律當不可信） ─────────────
+    // OWASP Input Validation：同時驗語法（型別、格式）與語意（數值在此用途下是否合理）
+    const MAX_LEVELS = LIMITS.maxLevels;
+    const isFiniteNum = v => typeof v === "number" && Number.isFinite(v);
+    const inRange = (v, lim) => isFiniteNum(v) && v >= lim.min && v <= lim.max;
+    const asObj = v => (v && typeof v === "object" && !Array.isArray(v) ? v : null);
+    // 一座貨架是否合規：座標在房間內、長深 ≥ minSpan、與前一物件（X 鏈）及已放置的其他貨架（X、Z 兩方向）不重疊、
+    // 層距 > 0 且嚴格遞增、最高層 ≤ min(架高, 天花板)
+    function rackOk(c, room, prev, placed = []) {
+      if (!c || ![c.x0, c.x1, c.z0, c.z1].every(isFiniteNum)) return false;
+      if (c.x0 < 0 || c.z0 < 0 || c.x1 > room.length || c.z1 > room.width) return false;
+      if (c.x1 - c.x0 < LIMITS.minSpan || c.z1 - c.z0 < LIMITS.minSpan) return false;
+      if (prev && c.x0 < prev.x1 - 1e-6) return false;
+      for (const o of placed) {
+        if (c.x0 < o.x1 - 1e-6 && o.x0 < c.x1 - 1e-6 && c.z0 < o.z1 - 1e-6 && o.z0 < c.z1 - 1e-6) return false;
+      }
+      const lv = c.levels;
+      if (!Array.isArray(lv) || lv.length < 1 || lv.length > LIMITS.maxLevels) return false;
+      let last = 0;
+      for (const h of lv) {
+        if (!isFiniteNum(h) || h - last < LIMITS.minLevelGap - 1e-6) return false;
+        last = h;
+      }
+      return last <= Math.min(DESIGN.rackHeight, room.ceiling) + 1e-6;
+    }
+    function roomOk(room) {
+      return !!room && ["length", "width", "ceiling"].every(k => inRange(room[k], LIMITS.room[k]));
+    }
+    // 回傳完整的新設計（room＋racks）與 rejected（被丟棄而改用預設的項目名稱）。
+    // 房間不合規的欄位、貨架不合規的整架一律丟棄、改用預設值（OWASP：不合規輸入要明確回報，不能悄悄拿部分驗證過的資料繼續）
+    function sanitizeDesign(data) {
+      const room = { ...DEFAULT_DESIGN.room };
+      const racks = DEFAULT_DESIGN.racks.map(r => JSON.parse(JSON.stringify(r)));
+      const d = asObj(data);
+      const rejected = [];
+      const provided = new Set();
+      const dr = asObj(d?.room);
+      if (dr) {
+        let bad = false;
+        for (const k of ["length", "width", "ceiling"]) {
+          if (inRange(dr[k], LIMITS.room[k])) room[k] = dr[k];
+          else if (k in dr) bad = true;
+        }
+        if (bad) rejected.push("房間尺寸");
+      }
+      const dracks = asObj(d?.racks);
+      racks.forEach((r, i) => {
+        const dd = asObj(dracks?.[r.id]);
+        if (!dd) return;
+        const cand = { x0: dd.x0, x1: dd.x1, z0: dd.z0, z1: dd.z1, levels: Array.isArray(dd.levels) ? dd.levels.slice() : null };
+        const prev = r.prev ? racks.find(x => x.id === r.prev) : null;
+        if (rackOk(cand, room, prev, racks.slice(0, i))) { Object.assign(r, cand); provided.add(r.id); }
+        else rejected.push(r.name);
+      });
+      // 全部貨架兩兩檢查 X、Z 重疊（CWE-20：相關欄位之間也要一致）。
+      // 遠端資料沒給的貨架用預設值，也可能與給了的貨架重疊：把「由資料提供」的那一座退回預設並列入 rejected
+      const hit = (a, b) => a.x0 < b.x1 - 1e-6 && b.x0 < a.x1 - 1e-6 && a.z0 < b.z1 - 1e-6 && b.z0 < a.z1 - 1e-6;
+      for (let guard = 0; guard < racks.length * racks.length; guard++) {
+        let pair = null;
+        for (let i = 0; i < racks.length && !pair; i++) {
+          for (let j = i + 1; j < racks.length; j++) if (hit(racks[i], racks[j])) { pair = [i, j]; break; }
+        }
+        if (!pair) break;
+        const pick = [pair[1], pair[0]].find(k => provided.has(racks[k].id));
+        if (pick === undefined) break; // 兩座都是預設值（預設設計本身不重疊，不會發生）
+        const def = DEFAULT_DESIGN.racks.find(x => x.id === racks[pick].id);
+        Object.assign(racks[pick], JSON.parse(JSON.stringify({ x0: def.x0, x1: def.x1, z0: def.z0, z1: def.z1, levels: def.levels })));
+        provided.delete(racks[pick].id);
+        if (!rejected.includes(racks[pick].name)) rejected.push(racks[pick].name);
+      }
+      return { room, racks, rejected };
+    }
+    // 寫回雲端前檢查整份資料；回傳問題描述（固定字串）或 null
+    function dataProblem(data) {
+      if (!roomOk(data.room)) return "房間尺寸超出允許範圍";
+      for (const [i, r] of DESIGN.racks.entries()) {
+        const placed = DESIGN.racks.slice(0, i).map(x => data.racks[x.id]);
+        if (!rackOk(data.racks[r.id], data.room, r.prev ? data.racks[r.prev] : null, placed)) return `${r.name}尺寸超出允許範圍或與其他貨架重疊`;
+      }
+      return null;
+    }
+    const designKey = (room, racks) =>
+      JSON.stringify([room.length, room.width, room.ceiling, racks.map(r => [r.id, r.x0, r.x1, r.z0, r.z1, r.levels])]);
+    const currentKey = () => designKey(DESIGN.room, DESIGN.racks);
+    function commitDesign(sd) {
+      DESIGN.room = sd.room;
+      sd.racks.forEach((r, i) => { DESIGN.racks[i] = r; });
+    }
+    function syncCutRange() {
+      const prev = Number(cutInput.max);
+      const c = DESIGN.room.ceiling;
+      const wasAll = Number(cutInput.value) >= prev;
+      cutInput.max = String(c);
+      cutInput.value = String(wasAll ? c : Math.min(Number(cutInput.value), c));
+      applyCut();
+    }
+    function showDesign(sd) {
+      commitDesign(sd);
+      rebuildAll();
+      refreshGui();
+      syncCutRange();
+    }
+    // 網址參數 → 資料物件（形狀與雲端 data 相同，之後一律經 sanitizeDesign）
+    function paramsToData(p) {
+      const data = { room: {}, racks: {} };
       const R = p.get("R");
       if (R) {
-        const v = parseNums(R, "-");
-        if (v.length === 3 && v.every(x => okNum(x, 2000)) && v[0] >= 50 && v[1] >= 50 && v[2] >= 50) {
-          [DESIGN.room.length, DESIGN.room.width, DESIGN.room.ceiling] = v;
-        }
+        const v = R.split("-").map(Number);
+        if (v.length === 3) [data.room.length, data.room.width, data.room.ceiling] = v;
       }
       for (const r of DESIGN.racks) {
-        const s = p.get(r.id);
-        if (!s) continue;
-        const parts = s.split("-");
+        const str = p.get(r.id);
+        if (!str) continue;
+        const parts = str.split("-");
         if (parts.length !== 5) continue;
-        const box = parts.slice(0, 4).map(Number);
-        const levels = parseNums(parts[4], "_");
-        if (!box.every(x => okNum(x, 2000))) continue;
-        if (levels.length < 1 || levels.length > MAX_LEVELS || !levels.every(x => okNum(x, 1000))) continue;
-        [r.x0, r.x1, r.z0, r.z1] = box;
-        r.levels = levels;
-        normalizeRack(r);
+        const [x0, x1, z0, z1] = parts.slice(0, 4).map(Number);
+        data.racks[r.id] = { x0, x1, z0, z1, levels: parts[4].split("_").map(Number) };
       }
+      return data;
     }
-    const MAX_LEVELS = 10;
-
+    function designToData() {
+      return {
+        v: 1,
+        room: { ...DESIGN.room },
+        racks: Object.fromEntries(DESIGN.racks.map(r => [r.id, { x0: r.x0, x1: r.x1, z0: r.z0, z1: r.z1, levels: [...r.levels] }]))
+      };
+    }
     function restoreDefaults() {
-      DESIGN.room = { ...DEFAULT_DESIGN.room };
-      DESIGN.racks.forEach((r, i) => { DESIGN.racks[i] = JSON.parse(JSON.stringify(DEFAULT_DESIGN.racks[i])); });
+      showDesign(sanitizeDesign(null));
     }
 
     // ───────────── 面板按鈕（材料表） ─────────────
@@ -998,26 +1145,54 @@
     const rackFolders = new Map();
     const levelFolders = new Map();
 
-    function afterChange(rack) {
-      if (rack) {
-        normalizeRack(rack);
-        rebuildRack(rack);
-      }
+    function afterChange() {
+      DESIGN.racks.forEach(r => normalizeRack(r));
+      DESIGN.racks.forEach(rebuildRack);
       rebuildDims();
       refreshTexts();
-      scheduleUrlSync();
+      noteLocalEdit();
       rackFolders.forEach(f => f.controllersRecursive().forEach(c => c.updateDisplay()));
     }
+
+    // ── 連續尺寸：GUI 只顯示／輸入各段自己的尺寸；內部仍存座標（建模用）──
+    const r1 = v => Math.round(v * 10) / 10;
+    const topLimit = () => Math.min(DESIGN.rackHeight, DESIGN.room.ceiling);
+    const levelGap = (rack, i) => r1(rack.levels[i] - (i > 0 ? rack.levels[i - 1] : 0));
+    // 改第 i 層的層距：該層以上整體上移／下移（前綴和），總高夾在 ≤ 架高與天花板
+    function setLevelGap(rack, i, v) {
+      const lv = rack.levels;
+      const cur = lv[i] - (i > 0 ? lv[i - 1] : 0);
+      const maxV = Math.max(LIMITS.minLevelGap, topLimit() - (lv[lv.length - 1] - cur));
+      const d = r1(clamp(v, LIMITS.minLevelGap, maxV)) - cur;
+      for (let j = i; j < lv.length; j++) lv[j] = r1(lv[j] + d);
+    }
+    function shiftChain(rack, dx) {
+      for (const d of DESIGN.racks) {
+        if (d.prev !== rack.id) continue;
+        d.x0 = r1(d.x0 + dx);
+        d.x1 = r1(d.x1 + dx);
+        shiftChain(d, dx);
+      }
+    }
+    // 改一座貨架在 X 方向的位置或長度；排在它後面的貨架（prev 鏈）整體平移
+    function setRackX(rack, x0, x1) {
+      const dx = r1(x1) - rack.x1;
+      rack.x0 = r1(x0);
+      rack.x1 = r1(x1);
+      if (dx) shiftChain(rack, dx);
+    }
+    const prevEdge = rack => (rack.prev ? rackById(rack.prev).x1 : 0);
 
     function buildLevelControls(id) {
       levelFolders.get(id)?.destroy();
       const rack = rackById(id);
-      const folder = rackFolders.get(id).addFolder("各層高度（地板到板面）");
+      const folder = rackFolders.get(id).addFolder("各層高度（層距）");
       levelFolders.set(id, folder);
       rack.levels.forEach((_, i) => {
-        folder.add(prox(() => rackById(id).levels[i], v => { rackById(id).levels[i] = v; }), "v", 5, DESIGN.rackHeight, 1)
-          .name(`第 ${i + 1} 層`)
-          .onChange(() => afterChange(rackById(id)));
+        const label = i === 0 ? "第 1 層（離地板）" : `第 ${i + 1} 層（離第 ${i} 層）`;
+        folder.add(prox(() => levelGap(rackById(id), i), v => setLevelGap(rackById(id), i, v)), "v", LIMITS.minLevelGap, DESIGN.rackHeight, 1)
+          .name(label)
+          .onChange(() => afterChange());
       });
     }
 
@@ -1025,18 +1200,11 @@
       const lv = rack.levels;
       while (lv.length > n) lv.pop();
       while (lv.length < n) {
-        const sorted = [...lv].sort((a, b) => a - b);
-        const top = sorted[sorted.length - 1] ?? 0;
-        const step = sorted.length >= 2 ? top - sorted[sorted.length - 2] : 60;
-        let v = top + step;
-        if (!(v > top && v <= DESIGN.rackHeight)) {
-          // 頂端放不下：取最大空隙的中點
-          const pts = [0, ...sorted, DESIGN.rackHeight];
-          let best = 0;
-          for (let i = 1; i < pts.length - 1; i++) if (pts[i + 1] - pts[i] > pts[best + 1] - pts[best]) best = i;
-          v = Math.round((pts[best] + pts[best + 1]) / 2);
-        }
-        lv.push(v);
+        const last = lv[lv.length - 1] ?? 0;
+        const step = lv.length >= 2 ? last - lv[lv.length - 2] : 60;
+        const room = topLimit() - last;
+        if (room < LIMITS.minLevelGap) break;
+        lv.push(r1(last + Math.min(step, room)));
       }
     }
 
@@ -1048,52 +1216,260 @@
       rackFolders.set(id, folder);
       const L = () => DESIGN.room.length;
       const W = () => DESIGN.room.width;
-      const add = (get, set, name, max, step) => {
-        const c = folder.add(prox(get, set), "v", 0, max(), step).name(name).onChange(() => afterChange(R()));
+      const add = (get, set, name, min, max) => {
+        const c = folder.add(prox(get, set), "v", min, max(), 0.5).name(name).onChange(() => afterChange());
         rangeCtrls.push([c, max]);
         return c;
       };
-      add(() => R().x0, v => { R().x0 = v; }, "X 起點 x0", L, 0.5);
-      add(() => R().x1, v => { R().x1 = v; }, "X 終點 x1（長）", L, 0.5);
-      add(() => R().z1 - R().z0, v => { R().z1 = R().z0 + v; }, "Z 深（z1−z0）", W, 0.5);
+      const prevName = rack.prev ? rackById(rack.prev).name : null;
+      add(() => r1(R().x0 - prevEdge(R())), v => { const len = R().x1 - R().x0; setRackX(R(), prevEdge(R()) + v, prevEdge(R()) + v + len); },
+        prevName ? `離${prevName}（X 間距）` : "離左牆（X 間距）", 0, L);
+      add(() => r1(R().x1 - R().x0), v => setRackX(R(), R().x0, R().x0 + v), "長（X 方向）", LIMITS.minSpan, L);
+      add(() => r1(R().z1 - R().z0), v => {
+        if (R().zFrom === "z1") R().z0 = r1(R().z1 - v); else R().z1 = r1(R().z0 + v);
+      }, "深（Z 方向）", LIMITS.minSpan, W);
+      const fromBack = rack.zFrom === "z1";
+      add(() => (fromBack ? r1(W() - R().z1) : r1(R().z0)), v => {
+        const dep = R().z1 - R().z0;
+        if (fromBack) { R().z1 = r1(W() - v); R().z0 = r1(R().z1 - dep); } else { R().z0 = r1(v); R().z1 = r1(v + dep); }
+      }, fromBack ? "離後牆（Z 間距）" : "離前牆（Z 間距）", 0, W);
       folder.add(prox(() => R().levels.length, v => { setLevelCount(R(), Math.round(v)); }), "v", 1, MAX_LEVELS, 1)
         .name("層數")
-        .onChange(() => { buildLevelControls(id); afterChange(R()); });
+        .onChange(() => { buildLevelControls(id); afterChange(); });
       buildLevelControls(id);
+    }
+
+    // ───────────── 雲端同步（不需登入；後端權限由 Mac 端設定） ─────────────
+    const canSave = () => !!cloud.pb && cloud.status === "online";
+    let statusEl = null;
+    let ackCtrl = null;
+
+    // 最後編輯時間：record 的 updated 欄位（PocketBase autodate），以台灣時間顯示
+    const TAIPEI_FMT = new Intl.DateTimeFormat("en-US", {
+      timeZone: "Asia/Taipei", year: "numeric", month: "2-digit", day: "2-digit",
+      hour: "2-digit", minute: "2-digit", hourCycle: "h23"
+    });
+    function formatTaipei(updated) {
+      if (typeof updated !== "string" || !updated) return "—";
+      const d = new Date(updated.replace(" ", "T"));
+      if (Number.isNaN(d.getTime())) return "—";
+      const p = Object.fromEntries(TAIPEI_FMT.formatToParts(d).map(x => [x.type, x.value]));
+      return `${p.year}-${p.month}-${p.day} ${p.hour}:${p.minute}`;
+    }
+
+    // 狀態文字全是固定字串（lil-gui 的 name 走 innerHTML，不放動態內容；title 這裡用 textContent）
+    function renderCloudUi() {
+      const msgs = [];
+      if (cloud.rejected.length) msgs.push(`雲端資料中 ${cloud.rejected.join("、")}不合規，已改用預設，暫停自動存回`);
+      if (cloud.newer) msgs.push("雲端有較新版本，按「改看雲端最新版」可切換");
+      if (cloud.notice) msgs.push(cloud.notice);
+      if (cloud.status === "connecting") msgs.push("連線雲端中…");
+      else if (cloud.status === "offline") msgs.push("雲端未連線，顯示本機版本");
+      else {
+        if (cloud.urlOverride) msgs.push("目前顯示網址內的版本，非雲端最新");
+        if (!msgs.length) msgs.push("雲端已同步，修改會自動存到雲端");
+      }
+      const last = `最後編輯：${cloud.status === "online" ? formatTaipei(cloud.updated) : "—"}`;
+      gui.$title.textContent = `調整尺寸｜${msgs[0]}`;
+      if (statusEl) statusEl.textContent = [...msgs, last].join("\n");
+      document.getElementById("最後編輯").textContent = last;
+      ackCtrl?.show(cloud.paused);
+      layoutGui();
+    }
+
+    function noteLocalEdit() {
+      if (cloud.paused) {
+        // 雲端資料有不合規項目：先不自動存回，等使用者按確認
+        cloud.edited = true;
+        renderCloudUi();
+      } else if (canSave()) scheduleCloudSave();
+      else {
+        cloud.edited = true;
+        cloud.notice = cloud.status === "offline" ? "雲端未連線，修改不會同步" : "";
+        renderCloudUi();
+      }
+      scheduleUrlSync();
+    }
+
+    // 連續拖曳只送最後一次：每次改值都重設 600ms 計時
+    function scheduleCloudSave() {
+      clearTimeout(cloud.saveTimer);
+      cloud.edited = true;
+      cloud.rev += 1;
+      cloud.notice = "儲存中…";
+      renderCloudUi();
+      cloud.saveTimer = setTimeout(doSave, 600);
+    }
+    const SAVE_ERROR_REASON = { 400: "資料被拒", 403: "沒有權限", 404: "找不到存檔", 429: "太頻繁" };
+    function saveErrorText(e) {
+      const st = Number(e?.status) || 0;
+      if (!st) return "雲端存檔失敗（網路錯誤），本機修改未同步";
+      const why = SAVE_ERROR_REASON[st] ? ` ${SAVE_ERROR_REASON[st]}` : "";
+      return `雲端存檔失敗（${st}${why}），本機修改未同步`;
+    }
+    async function doSave() {
+      cloud.saveTimer = 0;
+      if (!canSave() || cloud.paused) return;
+      const data = designToData();
+      const problem = dataProblem(data);
+      if (problem) {
+        cloud.notice = `${problem}，未同步到雲端`;
+        renderCloudUi();
+        return;
+      }
+      if (JSON.stringify(data).length > LIMITS.maxDataBytes) {
+        cloud.notice = "資料過大，未同步到雲端";
+        renderCloudUi();
+        return;
+      }
+      const rev = cloud.rev;
+      cloud.saving = true;
+      try {
+        const rec = await cloud.pb.collection("designs").update(SYNC_RECORD, { data });
+        if (cloud.urlOverride) { cloud.urlOverride = false; clearDesignParams(); }
+        cloud.updated = typeof rec?.updated === "string" ? rec.updated : cloud.updated;
+        // 存檔期間又改過（版本號變了或已排下一次存檔）就不能宣告「已同步」，保留 edited 以免被遠端版本蓋掉
+        if (rev === cloud.rev && !cloud.saveTimer) {
+          cloud.edited = false;
+          cloud.newer = false;
+          cloud.notice = "已存到雲端";
+        }
+      } catch (e) {
+        if (e?.isAbort) return;
+        cloud.edited = true;
+        cloud.notice = saveErrorText(e);
+      } finally {
+        cloud.saving = false;
+        renderCloudUi();
+      }
+    }
+
+    // 採用一份雲端資料：記下被拒項目（有的話暫停自動存回），內容與畫面相同就不重建
+    function adoptRemote(data) {
+      const sd = sanitizeDesign(data);
+      cloud.rejected = sd.rejected;
+      cloud.paused = sd.rejected.length > 0;
+      if (designKey(sd.room, sd.racks) !== currentKey()) showDesign(sd);
+      cloud.edited = false;
+      cloud.newer = false;
+      renderCloudUi();
+    }
+    // 收到雲端版本：本機有未存修改（編輯中、存檔中、存檔失敗、離線改過）或在看網址版本時一律不覆蓋，
+    // 改提示有較新版本，由使用者按「改看雲端最新版」切換
+    function onRemote(data) {
+      if (cloud.urlOverride) return;
+      if (cloud.saveTimer || cloud.saving || cloud.edited) {
+        const sd = sanitizeDesign(data);
+        if (designKey(sd.room, sd.racks) !== currentKey()) {
+          cloud.newer = true;
+          renderCloudUi();
+        }
+        return;
+      }
+      adoptRemote(data);
+    }
+    async function fetchLatest() {
+      const rec = await cloud.pb.collection("designs").getOne(SYNC_RECORD);
+      cloud.status = "online";
+      cloud.updated = typeof rec.updated === "string" ? rec.updated : "";
+      onRemote(rec.data);
+      renderCloudUi();
+    }
+    function goOffline() {
+      if (cloud.status === "online") return;
+      cloud.status = "offline";
+      syncUrl();
+      renderCloudUi();
+    }
+    async function initCloud() {
+      let PocketBase;
+      try {
+        ({ default: PocketBase } = await import(PB_SDK_URL));
+      } catch {
+        goOffline();
+        return;
+      }
+      cloud.pb = new PocketBase(SYNC_URL);
+      const timer = setTimeout(goOffline, 8000);
+      try {
+        await fetchLatest();
+      } catch {
+        clearTimeout(timer);
+        goOffline();
+        return;
+      }
+      clearTimeout(timer);
+      try {
+        await cloud.pb.collection("designs").subscribe(SYNC_RECORD, e => {
+          if (e.action !== "update") return;
+          if (typeof e.record?.updated === "string") cloud.updated = e.record.updated;
+          onRemote(e.record?.data);
+          renderCloudUi();
+        });
+        // 斷線重連後補抓最新（SSE 重連期間的事件不會補送）
+        cloud.pb.realtime.subscribe("PB_CONNECT", () => { fetchLatest().catch(() => {}); });
+      } catch {
+        /* 即時訂閱失敗時，仍可靠開頁時抓到的資料 */
+      }
+      renderCloudUi();
+    }
+    async function showCloudLatest() {
+      if (!cloud.pb || cloud.status !== "online") { cloud.notice = "雲端未連線，無法載入"; renderCloudUi(); return; }
+      try {
+        const rec = await cloud.pb.collection("designs").getOne(SYNC_RECORD);
+        cloud.urlOverride = false;
+        cloud.notice = "";
+        cloud.updated = typeof rec.updated === "string" ? rec.updated : "";
+        clearDesignParams();
+        adoptRemote(rec.data);
+      } catch {
+        cloud.notice = "載入雲端版本失敗";
+      }
+      renderCloudUi();
     }
 
     const actions = {
       copy() {
-        syncUrl();
+        // 分享網址只帶「與原設計不同」的參數，不改動網址列
+        const u = new URL(location.href);
+        u.search = urlWithDesign(designParams().toString()).split("?")[1] ?? "";
         const done = () => { shareCtrl.name("已複製 ✓"); setTimeout(() => shareCtrl.name("複製分享網址"), 1600); };
-        if (navigator.clipboard?.writeText) navigator.clipboard.writeText(location.href).then(done, () => prompt("複製這個網址", location.href));
-        else prompt("複製這個網址", location.href);
+        if (navigator.clipboard?.writeText) navigator.clipboard.writeText(u.href).then(done, () => prompt("複製這個網址", u.href));
+        else prompt("複製這個網址", u.href);
       },
       reset() {
         restoreDefaults();
-        rebuildAll();
-        refreshGui();
-        applyCut();
-        syncUrl();
+        noteLocalEdit();
+      },
+      latest: showCloudLatest,
+      ack() {
+        // 使用者確認：接受「不合規項目已改用預設」的畫面，恢復自動存回並把目前畫面寫回雲端
+        cloud.paused = false;
+        cloud.rejected = [];
+        scheduleCloudSave();
       }
     };
+    statusEl = document.createElement("div");
+    statusEl.className = "面板說明 狀態列";
+    gui.$children.insertBefore(statusEl, gui.$children.firstChild);
     const shareCtrl = gui.add(actions, "copy").name("複製分享網址");
     gui.add(actions, "reset").name("還原原設計");
+    gui.add(actions, "latest").name("改看雲端最新版");
+    ackCtrl = gui.add(actions, "ack").name("確認改用預設並恢復存回");
+    ackCtrl.hide();
     const roomFolder = gui.addFolder("房間");
     roomFolder.close();
     const roomNote = document.createElement("div");
     roomNote.className = "面板說明";
     roomNote.textContent = "縮小房間不會自動移動貨架";
     roomFolder.$children.appendChild(roomNote);
-    for (const [key, label, min, max] of [["length", "長（X）", 100, 1000], ["width", "寬（Z）", 100, 600], ["ceiling", "天花板高", 150, 600]]) {
-      roomFolder.add(prox(() => DESIGN.room[key], v => { DESIGN.room[key] = v; }), "v", min, max, 1)
+    for (const [key, label] of [["length", "長（X）"], ["width", "寬（Z）"], ["ceiling", "天花板高"]]) {
+      roomFolder.add(prox(() => DESIGN.room[key], v => { DESIGN.room[key] = v; }), "v", LIMITS.room[key].min, LIMITS.room[key].max, 1)
         .name(label)
         .onChange(() => {
-          const prevAll = Number(cutInput.value) >= Number(cutInput.max);
-          cutInput.max = String(DESIGN.room.ceiling);
-          cutInput.value = String(prevAll ? DESIGN.room.ceiling : Math.min(Number(cutInput.value), DESIGN.room.ceiling));
+          syncCutRange();
           rebuildRoom();
-          afterChange(null);
+          afterChange();
           rangeCtrls.forEach(([c, m]) => c.max(m()));
         });
     }
@@ -1103,15 +1479,26 @@
       DESIGN.racks.forEach(r => buildLevelControls(r.id));
       rangeCtrls.forEach(([c, m]) => c.max(m()));
       gui.controllersRecursive().forEach(c => c.updateDisplay());
-      cutInput.max = String(DESIGN.room.ceiling);
-      cutInput.value = String(DESIGN.room.ceiling);
     }
 
     // 面板位置：量測左側同欄的既有元件，排在它們下面、圖例／前進後退按鈕上面，避免重疊
     function layoutGui() {
       const host = document.getElementById("調整面板");
-      const hr = host.getBoundingClientRect();
       const rectOf = id => document.getElementById(id).getBoundingClientRect();
+      const mobile = matchMedia("(max-width: 680px)").matches;
+      const viewsEl = document.getElementById("視角按鈕");
+      const layersEl = document.getElementById("圖層");
+      const hintEl = document.getElementById("操作提示");
+      if (mobile) {
+        // 標題區高度會隨文字換行變動：視角按鈕、圖層列依實際高度往下排
+        viewsEl.style.top = `${rectOf("標題區").bottom + 8}px`;
+        layersEl.style.top = `${rectOf("視角按鈕").bottom + 2}px`;
+      } else {
+        viewsEl.style.top = "";
+        layersEl.style.top = "";
+        hintEl.style.top = "";
+      }
+      const hr = host.getBoundingClientRect();
       const sameColumn = r => r.right > hr.left && r.left < hr.right;
       let top = 0;
       for (const id of ["標題區", "視角按鈕", "圖層"]) {
@@ -1126,6 +1513,7 @@
       }
       host.style.top = `${top}px`;
       host.style.maxHeight = `${Math.max(80, bottom - top)}px`;
+      if (mobile) hintEl.style.top = `${top + gui.$title.getBoundingClientRect().height + 8}px`;
     }
     addEventListener("resize", layoutGui);
     // 展開調整面板時收起操作提示，避免兩者疊在一起
@@ -1135,21 +1523,21 @@
     if (matchMedia("(max-width: 680px)").matches) gui.close();
 
     // ───────────── 啟動：讀網址 → 建場景 ─────────────
-    applyParams(new URLSearchParams(location.search));
-    if (cutInput) {
-      cutInput.max = String(DESIGN.room.ceiling);
-      cutInput.value = String(DESIGN.room.ceiling);
-    }
-    // 網址若改過尺寸，GUI 控制項要同步顯示
+    commitDesign(sanitizeDesign(paramsToData(new URLSearchParams(location.search))));
+    // 網址帶了與原設計不同的參數 → 優先顯示網址版本（不被雲端覆蓋）
+    cloud.urlOverride = designParams().toString() !== "";
     rebuildAll();
     refreshGui();
+    syncCutRange();
+    renderCloudUi();
+    initCloud();
     controls.target.copy(roomCenter());
     layoutGui();
     document.fonts?.ready.then(layoutGui);
 
     if (new URLSearchParams(location.search).has("debug")) {
       window.__b5scene = scene;
-      window.__b5 = { DESIGN, DEFAULT_DESIGN, renderer, scene, gui, designParams, rackGroups, afterChange };
+      window.__b5 = { DESIGN, DEFAULT_DESIGN, renderer, scene, gui, designParams, rackGroups, afterChange, cloud, LIMITS, sanitizeDesign, dataProblem, showDesign, designToData, onRemote, adoptRemote, fetchLatest, chainPieces, formatTaipei, saveErrorText, noteLocalEdit };
     }
 
     let transition = null;

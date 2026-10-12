@@ -334,6 +334,114 @@
       }
       .貨架標籤 { font-size: 11px; }
     }
+    /* ───── 窄螢幕（≤700px）：選單收進底部抽屜 ───── */
+    #抽屜 { display: none; }
+    body.窄 #抽屜 {
+      display: block;
+      position: fixed;
+      z-index: 25;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      padding-bottom: env(safe-area-inset-bottom);
+      border-radius: 14px 14px 0 0;
+      background: #fff;
+      box-shadow: 0 -3px 14px rgba(0, 0, 0, .18);
+    }
+    #抽屜把手 {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      width: 100%;
+      min-height: 48px;
+      padding: 0 14px;
+      border: 0;
+      background: transparent;
+      color: #18212b;
+      font: inherit;
+      font-size: 15px;
+      font-weight: 700;
+      cursor: pointer;
+      touch-action: manipulation;
+    }
+    #把手狀態 {
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      color: #4c5965;
+      font-size: 12px;
+      font-weight: 600;
+      text-align: right;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    #抽屜內容 {
+      max-height: calc(60vh - 48px - env(safe-area-inset-bottom));
+      max-height: calc(60dvh - 48px - env(safe-area-inset-bottom));
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      padding: 4px 12px 12px;
+    }
+    #抽屜內容[hidden] { display: none; }
+    body.窄 #抽屜內容 > * { margin: 0 0 8px; }
+    body.窄 #副標 { color: #4c5965; font-size: 12px; max-width: none; }
+    body.窄 #視角按鈕 {
+      position: static;
+      justify-content: flex-start;
+      padding: 0;
+      border: 0;
+      background: none;
+      box-shadow: none;
+      backdrop-filter: none;
+    }
+    body.窄 #圖層 {
+      position: static;
+      max-width: none;
+      border-radius: 10px;
+      background: #f3f6f8;
+      box-shadow: none;
+    }
+    body.窄 #調整面板 { position: static; max-height: none; overflow: visible; }
+    body.窄 #調整面板 .lil-gui.root { --width: 100%; }
+    body.窄 #圖例 {
+      position: static;
+      min-width: 0;
+      background: #f3f6f8;
+      box-shadow: none;
+      backdrop-filter: none;
+      pointer-events: auto;
+    }
+    /* 頂部只留一行：標題＋最後編輯 */
+    body.窄 #標題區 {
+      right: max(12px, env(safe-area-inset-right));
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 6px 10px;
+    }
+    body.窄 #標題區 h1 { margin: 0; font-size: 15px; }
+    body.窄 #最後編輯 { margin: 0; font-size: 12px; white-space: nowrap; }
+    /* 前進／後退縮小，移到抽屜把手列上方右側（--drawer-h 由 JS 量測，抽屜展開時會跟著上移） */
+    body.窄 #移動 {
+      flex-direction: row;
+      gap: 6px;
+      right: max(12px, env(safe-area-inset-right));
+      bottom: calc(var(--drawer-h, 48px) + 8px);
+    }
+    body.窄 #移動 button { min-width: 0; padding: 7px 10px; border-radius: 8px; font-size: 13px; }
+    body.窄 #操作提示 {
+      top: auto;
+      bottom: calc(var(--drawer-h, 48px) + 56px);
+      left: 12px;
+      right: 12px;
+      width: auto;
+      max-width: none;
+      transform: none;
+    }
+    /* 被遮住或在畫面外的標籤（JS 每幀／每 200ms 判定） */
+    .標籤隱藏 { display: none !important; }
   </style>
 
   <script async src="https://cdn.jsdelivr.net/npm/es-module-shims@2.8.4/dist/es-module-shims.js"></script>
@@ -383,6 +491,11 @@
     <button type="button" id="後退" aria-label="鏡頭往後">▼ 後退</button>
   </div>
   <div id="操作提示">單指拖曳＝360° 轉視角｜雙指捏合＝縮放｜雙指拖曳＝平移｜按住前進／後退＝走動</div>
+
+  <div id="抽屜">
+    <button type="button" id="抽屜把手" aria-expanded="false" aria-controls="抽屜內容"><span>☰ 選單</span><span id="把手狀態"></span></button>
+    <div id="抽屜內容" hidden></div>
+  </div>
 
   <div id="調整面板" aria-label="調整尺寸面板"></div>
 
@@ -555,6 +668,8 @@
       return line;
     }
 
+    const labelSet = new Set(); // 所有 CSS2D 標籤（窄螢幕每幀投影判斷用）
+
     function addLabel(group, text, x, height, z, className, background) {
       const element = document.createElement("div");
       element.className = className;
@@ -569,7 +684,7 @@
     // 釋放：geometry／非共用 material dispose，CSS2DObject 的 DOM 元素移除（three.js 手冊 how-to-dispose-of-objects）
     function disposeTree(root) {
       root.traverse(obj => {
-        if (obj.isCSS2DObject) obj.element.remove();
+        if (obj.isCSS2DObject) { obj.element.remove(); labelSet.delete(obj); }
         if (obj.geometry) obj.geometry.dispose();
         const mats = Array.isArray(obj.material) ? obj.material : obj.material ? [obj.material] : [];
         for (const m of mats) if (!SHARED_MATERIALS.has(m)) m.dispose();
@@ -851,6 +966,7 @@
 
     function finishBuild(group) {
       scene.add(group);
+      group.traverse(o => { if (o.isCSS2DObject) labelSet.add(o); });
       applyClip(group);
       applyLayers();
       applyCut();
@@ -1137,6 +1253,7 @@
     document.addEventListener("keydown", e => {
       if (e.key !== "Escape") return;
       if (!document.getElementById("材料表").hidden) togglePanel("材料表", false);
+      else if (!document.getElementById("抽屜內容").hidden) setDrawer(false);
     });
     document.getElementById("開材料表").addEventListener("click", () => togglePanel("材料表", document.getElementById("材料表").hidden));
     document.querySelectorAll(".關閉").forEach(b => b.addEventListener("click", () => togglePanel(b.dataset.close, false)));
@@ -1275,7 +1392,9 @@
       const last = `最後編輯：${cloud.status === "online" ? formatTaipei(cloud.updated) : "—"}`;
       gui.$title.textContent = `調整尺寸｜${msgs[0]}`;
       if (statusEl) statusEl.textContent = [...msgs, last].join("\n");
-      document.getElementById("最後編輯").textContent = last;
+      const hhmm = cloud.status === "online" && cloud.updated ? formatTaipei(cloud.updated).slice(11) : "—";
+      document.getElementById("最後編輯").textContent = isNarrow() ? `最後編輯 ${hhmm}` : last;
+      document.getElementById("把手狀態").textContent = msgs[0];
       ackCtrl?.show(cloud.paused);
       layoutGui();
     }
@@ -1487,6 +1606,13 @@
     // 面板位置：量測左側同欄的既有元件，排在它們下面、圖例／前進後退按鈕上面，避免重疊
     function layoutGui() {
       const host = document.getElementById("調整面板");
+      if (document.body.classList.contains("窄")) {
+        // 窄螢幕版面全由 CSS 與底部抽屜負責：清掉桌機版量測出的 inline 位置
+        for (const id of ["視角按鈕", "圖層", "操作提示"]) document.getElementById(id).style.top = "";
+        host.style.top = "";
+        host.style.maxHeight = "";
+        return;
+      }
       const rectOf = id => document.getElementById(id).getBoundingClientRect();
       const mobile = matchMedia("(max-width: 680px)").matches;
       const viewsEl = document.getElementById("視角按鈕");
@@ -1523,7 +1649,87 @@
     const hideHintWhenOpen = () => { if (!gui._closed) document.getElementById("操作提示").hidden = true; };
     gui.$title.addEventListener("click", hideHintWhenOpen);
     gui.$title.addEventListener("keydown", e => { if (e.code === "Enter" || e.code === "Space") hideHintWhenOpen(); });
-    if (matchMedia("(max-width: 680px)").matches) gui.close();
+    // ───────────── 窄螢幕（≤700px）：選單收進底部抽屜、標籤減量 ─────────────
+    const narrowMQ = matchMedia("(max-width: 700px)");
+    function isNarrow() { return narrowMQ.matches; }
+    const drawer = document.getElementById("抽屜");
+    const drawerHandle = document.getElementById("抽屜把手");
+    const drawerBody = document.getElementById("抽屜內容");
+    // 抽屜裡依序放：副標、視角、圖層、調整面板、圖例；用註解節點記住原位，回到寬螢幕時搬回去
+    const drawerItems = ["副標", "視角按鈕", "圖層", "調整面板", "圖例"].map(id => ({
+      el: document.getElementById(id), mark: document.createComment(id), inDrawer: false
+    }));
+    function updateDrawerHeight() {
+      document.documentElement.style.setProperty("--drawer-h", `${Math.round(drawer.getBoundingClientRect().height)}px`);
+    }
+    function setDrawer(open) {
+      drawerBody.hidden = !open;
+      drawerHandle.setAttribute("aria-expanded", String(open));
+      if (open) document.getElementById("操作提示").hidden = true;
+      updateDrawerHeight();
+    }
+    drawerHandle.addEventListener("click", () => setDrawer(drawerBody.hidden));
+    function applyNarrow() {
+      const on = isNarrow();
+      document.body.classList.toggle("窄", on);
+      for (const it of drawerItems) {
+        if (on && !it.inDrawer) {
+          it.el.parentNode.insertBefore(it.mark, it.el);
+          drawerBody.appendChild(it.el);
+          it.inDrawer = true;
+        } else if (!on && it.inDrawer) {
+          it.mark.replaceWith(it.el);
+          it.inDrawer = false;
+        }
+      }
+      if (on) setDrawer(false);
+      else for (const o of labelSet) o.element.classList.remove("標籤隱藏");
+      renderCloudUi();
+      updateDrawerHeight();
+    }
+    narrowMQ.addEventListener("change", applyNarrow);
+    addEventListener("resize", updateDrawerHeight);
+    new ResizeObserver(updateDrawerHeight).observe(drawer); // 抽屜展開／收合／內容變高時，前進後退按鈕跟著上移
+
+    // 標籤減量（three.js manual〈Aligning HTML Elements to 3D〉）：
+    // (a) 投影後 |z|>1 或超出畫面就隱藏；(c) 貨架名稱與層高標籤用 Raycaster 判斷是否被貨架擋住，每 200ms 最多做一次
+    const labelTmp = new THREE.Vector3();
+    const labelRay = new THREE.Raycaster();
+    let lastOcclusion = 0;
+    function updateLabelVisibility(now) {
+      if (!isNarrow()) return;
+      const doOcclusion = now - lastOcclusion >= 200;
+      let targets = null;
+      if (doOcclusion) {
+        lastOcclusion = now;
+        targets = [];
+        for (const g of rackGroups.values()) for (const c of g.children) if (c.isMesh) targets.push(c);
+      }
+      for (const o of labelSet) {
+        o.getWorldPosition(labelTmp);
+        const dist = camera.position.distanceTo(labelTmp);
+        labelTmp.project(camera);
+        const off = Math.abs(labelTmp.z) > 1 || Math.abs(labelTmp.x) > 1.05 || Math.abs(labelTmp.y) > 1.05;
+        if (doOcclusion) {
+          const cls = o.element.classList;
+          let occluded = false;
+          if (!off && o.visible && (cls.contains("貨架標籤") || cls.contains("高度標籤"))) {
+            labelRay.setFromCamera(labelTmp, camera);
+            labelRay.far = Math.max(0, dist - 2);
+            // Raycaster 只看 layers、不處理 clippingPlanes：被剖切掉（y 高於剖切高度）的命中不算遮擋
+            occluded = labelRay.intersectObjects(targets, false).some(h => h.point.y <= cutPlane.constant);
+          }
+          o.userData.occluded = occluded;
+        }
+        o.element.classList.toggle("標籤隱藏", off || !!o.userData.occluded);
+      }
+    }
+    // 窄螢幕預設關閉「層板高度」圖層（使用者可在抽屜內打開）
+    if (isNarrow()) {
+      layerState.層高 = false;
+      document.querySelector('#圖層 button[data-layer="層高"]').setAttribute("aria-pressed", "false");
+    }
+    if (isNarrow()) gui.close();
 
     // ───────────── 啟動：讀網址 → 建場景 ─────────────
     commitDesign(sanitizeDesign(paramsToData(new URLSearchParams(location.search))));
@@ -1532,6 +1738,7 @@
     rebuildAll();
     refreshGui();
     syncCutRange();
+    applyNarrow();
     renderCloudUi();
     initCloud();
     controls.target.copy(roomCenter());
@@ -1693,6 +1900,7 @@
 
       controls.update();
       renderer.render(scene, camera);
+      updateLabelVisibility(performance.now());
       labelRenderer.render(scene, camera);
     }
 

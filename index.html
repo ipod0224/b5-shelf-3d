@@ -469,6 +469,7 @@
     // ==== DEFAULT_DESIGN END ====
     // 執行時使用的設計物件：由 DEFAULT_DESIGN 複製而來，之後可被 GUI、網址、雲端資料改動
     const DESIGN = JSON.parse(JSON.stringify(DEFAULT_DESIGN));
+    if (DESIGN.rackHeight !== LIMITS.rackHeight) DESIGN.rackHeight = LIMITS.rackHeight; // 架高以 LIMITS 為準（DESIGN.rackHeight 只供建模用）
     const fmt = n => String(Math.round(n * 100) / 100);
     const rackById = id => DESIGN.racks.find(r => r.id === id);
     const rackLen = r => (r.axis === "z" ? r.z1 - r.z0 : r.x1 - r.x0);
@@ -1014,7 +1015,7 @@
         if (!isFiniteNum(h) || h - last < LIMITS.minLevelGap - 1e-6) return false;
         last = h;
       }
-      return last <= Math.min(DESIGN.rackHeight, room.ceiling) + 1e-6;
+      return last <= Math.min(LIMITS.rackHeight, room.ceiling) + 1e-6;
     }
     function roomOk(room) {
       return !!room && ["length", "width", "ceiling"].every(k => inRange(room[k], LIMITS.room[k]));
@@ -1111,6 +1112,8 @@
       }
       return data;
     }
+    // 後端 maxSize 以 bytes 計：用 UTF-8 位元組數，不是 JSON 字串的字元數（中文一字 3 bytes）
+    const jsonBytes = v => new TextEncoder().encode(JSON.stringify(v)).length;
     function designToData() {
       return {
         v: 1,
@@ -1156,7 +1159,7 @@
 
     // ── 連續尺寸：GUI 只顯示／輸入各段自己的尺寸；內部仍存座標（建模用）──
     const r1 = v => Math.round(v * 10) / 10;
-    const topLimit = () => Math.min(DESIGN.rackHeight, DESIGN.room.ceiling);
+    const topLimit = () => Math.min(LIMITS.rackHeight, DESIGN.room.ceiling);
     const levelGap = (rack, i) => r1(rack.levels[i] - (i > 0 ? rack.levels[i - 1] : 0));
     // 改第 i 層的層距：該層以上整體上移／下移（前綴和），總高夾在 ≤ 架高與天花板
     function setLevelGap(rack, i, v) {
@@ -1190,7 +1193,7 @@
       levelFolders.set(id, folder);
       rack.levels.forEach((_, i) => {
         const label = i === 0 ? "第 1 層（離地板）" : `第 ${i + 1} 層（離第 ${i} 層）`;
-        folder.add(prox(() => levelGap(rackById(id), i), v => setLevelGap(rackById(id), i, v)), "v", LIMITS.minLevelGap, DESIGN.rackHeight, 1)
+        folder.add(prox(() => levelGap(rackById(id), i), v => setLevelGap(rackById(id), i, v)), "v", LIMITS.minLevelGap, LIMITS.rackHeight, 1)
           .name(label)
           .onChange(() => afterChange());
       });
@@ -1317,7 +1320,7 @@
         renderCloudUi();
         return;
       }
-      if (JSON.stringify(data).length > LIMITS.maxDataBytes) {
+      if (jsonBytes(data) > LIMITS.maxDataBytes) {
         cloud.notice = "資料過大，未同步到雲端";
         renderCloudUi();
         return;

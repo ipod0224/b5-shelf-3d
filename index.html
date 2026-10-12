@@ -1,0 +1,906 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>B5 小倉庫貨架 3D 圖</title>
+  <style>
+    :root { color-scheme: light; }
+    * { box-sizing: border-box; }
+    html, body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      font-family: "Noto Sans TC", "Microsoft JhengHei", sans-serif;
+      background: #e9eef2;
+      color: #18212b;
+    }
+    #app, canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+    }
+    #標題區 {
+      position: fixed;
+      z-index: 10;
+      top: max(12px, env(safe-area-inset-top));
+      left: max(12px, env(safe-area-inset-left));
+      padding: 10px 13px;
+      border: 1px solid rgba(42, 52, 61, .18);
+      border-radius: 10px;
+      background: rgba(255, 255, 255, .9);
+      box-shadow: 0 3px 14px rgba(0, 0, 0, .12);
+      backdrop-filter: blur(5px);
+      pointer-events: none;
+    }
+    #標題區 h1 {
+      margin: 0 0 4px;
+      font-size: clamp(17px, 2.4vw, 25px);
+      line-height: 1.2;
+    }
+    #標題區 p {
+      margin: 0;
+      color: #4c5965;
+      font-size: clamp(11px, 1.5vw, 14px);
+      white-space: normal;
+      max-width: 46vw;
+    }
+    #視角按鈕 {
+      position: fixed;
+      z-index: 20;
+      top: max(12px, env(safe-area-inset-top));
+      right: max(12px, env(safe-area-inset-right));
+      display: flex;
+      gap: 6px;
+      padding: 6px;
+      border: 1px solid rgba(42, 52, 61, .18);
+      border-radius: 11px;
+      background: rgba(255, 255, 255, .9);
+      box-shadow: 0 3px 14px rgba(0, 0, 0, .12);
+      backdrop-filter: blur(5px);
+    }
+    #視角按鈕 button {
+      appearance: none;
+      min-height: 38px;
+      padding: 7px 11px;
+      border: 1px solid #aab4bd;
+      border-radius: 7px;
+      background: #fff;
+      color: #27313b;
+      font: inherit;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      touch-action: manipulation;
+    }
+    #視角按鈕 button:hover { background: #eef3f6; }
+    #視角按鈕 button.active {
+      border-color: #235f91;
+      background: #2774ae;
+      color: #fff;
+    }
+    #圖層 {
+      position: fixed;
+      z-index: 20;
+      top: calc(max(12px, env(safe-area-inset-top)) + 58px);
+      right: max(12px, env(safe-area-inset-right));
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      align-items: center;
+      gap: 6px;
+      max-width: calc(100vw - 24px);
+      padding: 6px 8px;
+      border: 1px solid rgba(42, 52, 61, .18);
+      border-radius: 11px;
+      background: rgba(255, 255, 255, .9);
+      box-shadow: 0 3px 14px rgba(0, 0, 0, .12);
+      font-size: 13px;
+    }
+    #圖層 span { color: #4c5965; font-weight: 700; }
+    #圖層 button {
+      padding: 6px 10px;
+      border: 1px solid #aab4bd;
+      border-radius: 999px;
+      background: #fff;
+      color: #8a949c;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+      touch-action: manipulation;
+    }
+    #圖層 button[aria-pressed="true"] {
+      border-color: #1f6e43;
+      background: #e3f4ea;
+      color: #1f5c39;
+    }
+    #圖層 button[aria-pressed="true"]::before { content: "✓ "; }
+    #圖層 button:focus-visible, #視角按鈕 button:focus-visible, #移動 button:focus-visible {
+      outline: 3px solid #f0b400;
+      outline-offset: 2px;
+    }
+    #移動 {
+      position: fixed;
+      z-index: 20;
+      right: max(12px, env(safe-area-inset-right));
+      bottom: max(12px, env(safe-area-inset-bottom));
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      align-items: stretch;
+    }
+    #移動 button {
+      min-width: 76px;
+      padding: 12px 14px;
+      border: 1px solid #235f91;
+      border-radius: 10px;
+      background: rgba(39, 116, 174, .92);
+      color: #fff;
+      font: inherit;
+      font-size: 16px;
+      font-weight: 700;
+      touch-action: none;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    #移動 button:active { background: #1b5584; }
+    #操作提示 {
+      position: fixed;
+      z-index: 10;
+      left: 50%;
+      bottom: max(12px, env(safe-area-inset-bottom));
+      transform: translateX(-50%);
+      padding: 6px 10px;
+      border-radius: 8px;
+      background: rgba(24, 33, 43, .72);
+      color: #fff;
+      font-size: 12px;
+      pointer-events: none;
+      text-align: center;
+      max-width: 40vw;
+    }
+    @media (max-width: 700px) {
+      #操作提示 {
+        top: calc(max(12px, env(safe-area-inset-top)) + 188px);
+        bottom: auto;
+        max-width: calc(100vw - 32px);
+        width: max-content;
+      }
+    }
+    #圖例 {
+      position: fixed;
+      z-index: 10;
+      left: max(12px, env(safe-area-inset-left));
+      bottom: max(12px, env(safe-area-inset-bottom));
+      min-width: 150px;
+      padding: 9px 12px;
+      border: 1px solid rgba(42, 52, 61, .18);
+      border-radius: 10px;
+      background: rgba(255, 255, 255, .9);
+      box-shadow: 0 3px 14px rgba(0, 0, 0, .12);
+      font-size: 12px;
+      backdrop-filter: blur(5px);
+      pointer-events: none;
+    }
+    #圖例 strong {
+      display: block;
+      margin-bottom: 5px;
+      font-size: 13px;
+    }
+    .圖例列 {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      margin: 4px 0;
+      white-space: nowrap;
+    }
+    .色塊 {
+      width: 16px;
+      height: 11px;
+      flex: 0 0 auto;
+      border: 1px solid rgba(0, 0, 0, .3);
+      border-radius: 2px;
+    }
+    .貨架標籤 {
+      padding: 4px 7px;
+      border: 1px solid rgba(0, 0, 0, .35);
+      border-radius: 5px;
+      color: #fff;
+      font-size: 13px;
+      font-weight: 800;
+      line-height: 1;
+      white-space: nowrap;
+      text-shadow: 0 1px 2px rgba(0, 0, 0, .6);
+      box-shadow: 0 2px 6px rgba(0, 0, 0, .2);
+      pointer-events: none;
+    }
+    .高度標籤 {
+      padding: 2px 4px;
+      border: 1px solid rgba(39, 48, 56, .35);
+      border-radius: 3px;
+      background: rgba(255, 255, 255, .92);
+      color: #1b232a;
+      font-size: 10px;
+      font-weight: 800;
+      line-height: 1;
+      white-space: nowrap;
+      pointer-events: none;
+    }
+    .地面標籤 {
+      padding: 2px 5px;
+      border: 1px solid rgba(37, 48, 58, .25);
+      border-radius: 4px;
+      background: rgba(255, 255, 255, .88);
+      color: #1d2933;
+      font-size: 11px;
+      font-weight: 800;
+      white-space: nowrap;
+      pointer-events: none;
+    }
+    .尺寸標籤 {
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: rgba(26, 43, 56, .88);
+      color: #fff;
+      font-size: 11px;
+      font-weight: 800;
+      white-space: nowrap;
+      pointer-events: none;
+    }
+    @media (max-width: 680px) {
+      #標題區 {
+        right: 12px;
+        padding: 8px 10px;
+      }
+      #標題區 p { max-width: none; }
+      #視角按鈕 {
+        top: calc(max(12px, env(safe-area-inset-top)) + 86px);
+      }
+      #圖層 {
+        top: calc(max(12px, env(safe-area-inset-top)) + 136px);
+      }
+      #視角按鈕 button {
+        min-height: 35px;
+        padding: 6px 9px;
+        font-size: 13px;
+      }
+      #圖例 {
+        padding: 7px 9px;
+        font-size: 11px;
+      }
+      .貨架標籤 { font-size: 11px; }
+    }
+  </style>
+
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+  <div id="app"></div>
+
+  <header id="標題區">
+    <h1>B5 小倉庫貨架 3D 圖</h1>
+    <p>單位 cm｜高度＝地板到層板上面｜板厚 6mm</p>
+  </header>
+
+  <nav id="視角按鈕" aria-label="視角切換">
+    <button type="button" data-view="立體" class="active">立體</button>
+    <button type="button" data-view="俯視">俯視</button>
+    <button type="button" data-view="門口">從門口看</button>
+  </nav>
+
+  <div id="圖層" role="group" aria-label="圖層開關">
+    <span>圖層</span>
+    <button type="button" data-layer="尺寸" aria-pressed="true">尺寸線</button>
+    <button type="button" data-layer="層高" aria-pressed="true">層板高度</button>
+    <button type="button" data-layer="名稱" aria-pressed="true">貨架名稱</button>
+  </div>
+  <div id="移動">
+    <button type="button" id="前進" aria-label="鏡頭往前">▲ 前進</button>
+    <button type="button" id="後退" aria-label="鏡頭往後">▼ 後退</button>
+  </div>
+  <div id="操作提示">單指拖曳＝360° 轉視角｜雙指捏合＝縮放｜雙指拖曳＝平移｜按住前進／後退＝走動</div>
+
+  <aside id="圖例">
+    <strong>貨架圖例</strong>
+    <div class="圖例列"><span class="色塊" style="background:#0072b2"></span>A 架 186×77（PDF 紅）</div>
+    <div class="圖例列"><span class="色塊" style="background:#e69f00"></span>B 架 203×77（PDF 紅）</div>
+    <div class="圖例列"><span class="色塊" style="background:#cc79a7"></span>C 小格 60×49（PDF 紅）</div>
+    <div class="圖例列"><span class="色塊" style="background:#009e73"></span>D 架 251×76（PDF 綠）</div>
+    <div class="圖例列"><span class="色塊" style="background:#d7263d"></span>E 架 225.5×82（PDF 橘）</div>
+  </aside>
+
+  <script type="module">
+    import * as THREE from "three";
+    import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+    import { CSS2DRenderer, CSS2DObject } from "three/addons/renderers/CSS2DRenderer.js";
+
+    const app = document.getElementById("app");
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0xe9eef2);
+
+    const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 1, 4000);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    renderer.setSize(innerWidth, innerHeight);
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    app.appendChild(renderer.domElement);
+
+    const labelRenderer = new CSS2DRenderer();
+    labelRenderer.setSize(innerWidth, innerHeight);
+    labelRenderer.domElement.style.position = "absolute";
+    labelRenderer.domElement.style.inset = "0";
+    labelRenderer.domElement.style.pointerEvents = "none";
+    app.appendChild(labelRenderer.domElement);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.075;
+    controls.enablePan = true;
+    controls.screenSpacePanning = true;
+    controls.minDistance = 10;
+    controls.maxDistance = 2200;
+    controls.maxPolarAngle = Math.PI * 0.495;
+    controls.target.set(265, 115, 125.5);
+
+    scene.add(new THREE.HemisphereLight(0xffffff, 0x73808b, 2.15));
+
+    const keyLight = new THREE.DirectionalLight(0xffffff, 2.15);
+    keyLight.position.set(180, 650, 420);
+    keyLight.castShadow = true;
+    keyLight.shadow.mapSize.set(2048, 2048);
+    keyLight.shadow.camera.left = -500;
+    keyLight.shadow.camera.right = 500;
+    keyLight.shadow.camera.top = 500;
+    keyLight.shadow.camera.bottom = -500;
+    keyLight.shadow.camera.near = 100;
+    keyLight.shadow.camera.far = 1200;
+    scene.add(keyLight);
+
+    const floor = new THREE.Mesh(
+      new THREE.PlaneGeometry(530, 251),
+      new THREE.MeshStandardMaterial({
+        color: 0xd4d7d9,
+        roughness: 0.95,
+        metalness: 0
+      })
+    );
+    floor.rotation.x = -Math.PI / 2;
+    floor.position.set(265, -0.08, 125.5);
+    floor.receiveShadow = true;
+    scene.add(floor);
+
+    const wallMaterial = new THREE.MeshBasicMaterial({
+      color: 0x8aa0af,
+      transparent: true,
+      opacity: 0.15,
+      side: THREE.DoubleSide,
+      depthWrite: false
+    });
+    const wallLineMaterial = new THREE.LineBasicMaterial({
+      color: 0x536674,
+      transparent: true,
+      opacity: 0.78
+    });
+
+    function wallAtZ(x0, x1, z, h0 = 0, h1 = 400) {
+      const mesh = new THREE.Mesh(
+        new THREE.PlaneGeometry(x1 - x0, h1 - h0),
+        wallMaterial
+      );
+      mesh.position.set((x0 + x1) / 2, (h0 + h1) / 2, z);
+      scene.add(mesh);
+    }
+
+    function wallAtX(z0, z1, x, h0 = 0, h1 = 400) {
+      const mesh = new THREE.Mesh(
+        new THREE.PlaneGeometry(z1 - z0, h1 - h0),
+        wallMaterial
+      );
+      mesh.rotation.y = Math.PI / 2;
+      mesh.position.set(x, (h0 + h1) / 2, (z0 + z1) / 2);
+      scene.add(mesh);
+    }
+
+    function addSegments(points, material = wallLineMaterial) {
+      const geometry = new THREE.BufferGeometry().setFromPoints(points);
+      const line = new THREE.LineSegments(geometry, material);
+      scene.add(line);
+      return line;
+    }
+
+    function rectangularOutlineZ(x0, x1, z, h0, h1) {
+      addSegments([
+        new THREE.Vector3(x0, h0, z), new THREE.Vector3(x1, h0, z),
+        new THREE.Vector3(x1, h0, z), new THREE.Vector3(x1, h1, z),
+        new THREE.Vector3(x1, h1, z), new THREE.Vector3(x0, h1, z),
+        new THREE.Vector3(x0, h1, z), new THREE.Vector3(x0, h0, z)
+      ]);
+    }
+
+    function rectangularOutlineX(z0, z1, x, h0, h1) {
+      addSegments([
+        new THREE.Vector3(x, h0, z0), new THREE.Vector3(x, h0, z1),
+        new THREE.Vector3(x, h0, z1), new THREE.Vector3(x, h1, z1),
+        new THREE.Vector3(x, h1, z1), new THREE.Vector3(x, h1, z0),
+        new THREE.Vector3(x, h1, z0), new THREE.Vector3(x, h0, z0)
+      ]);
+    }
+
+    wallAtZ(0, 530, 0);
+    wallAtX(0, 251, 0);
+    wallAtX(0, 251, 530);
+    wallAtZ(90, 530, 251);
+    wallAtZ(0, 90, 251, 210, 400);
+
+    rectangularOutlineZ(0, 530, 0, 0, 400);
+    rectangularOutlineX(0, 251, 0, 0, 400);
+    rectangularOutlineX(0, 251, 530, 0, 400);
+    rectangularOutlineZ(90, 530, 251, 0, 400);
+    rectangularOutlineZ(0, 90, 251, 210, 400);
+
+    addSegments([
+      new THREE.Vector3(0, 400, 0), new THREE.Vector3(530, 400, 0),
+      new THREE.Vector3(530, 400, 0), new THREE.Vector3(530, 400, 251),
+      new THREE.Vector3(530, 400, 251), new THREE.Vector3(0, 400, 251),
+      new THREE.Vector3(0, 400, 251), new THREE.Vector3(0, 400, 0),
+      new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 400, 0),
+      new THREE.Vector3(530, 0, 0), new THREE.Vector3(530, 400, 0),
+      new THREE.Vector3(530, 0, 251), new THREE.Vector3(530, 400, 251),
+      new THREE.Vector3(0, 210, 251), new THREE.Vector3(0, 400, 251)
+    ]);
+
+    const doorMaterial = new THREE.MeshStandardMaterial({
+      color: 0x9aa3ab,
+      transparent: true,
+      opacity: 0.6,
+      roughness: 0.8,
+      side: THREE.DoubleSide
+    });
+    const door = new THREE.Mesh(new THREE.BoxGeometry(2, 210, 90), doorMaterial);
+    door.position.set(90, 105, 296);
+    door.castShadow = true;
+    scene.add(door);
+
+    const doorEdges = new THREE.LineSegments(
+      new THREE.EdgesGeometry(door.geometry),
+      new THREE.LineBasicMaterial({ color: 0x315b75 })
+    );
+    doorEdges.position.copy(door.position);
+    scene.add(doorEdges);
+
+    const hinge = new THREE.Mesh(
+      new THREE.CylinderGeometry(2.2, 2.2, 214, 14),
+      new THREE.MeshStandardMaterial({ color: 0x31434f, roughness: 0.65 })
+    );
+    hinge.position.set(90, 107, 251);
+    scene.add(hinge);
+
+    const arcPoints = [];
+    for (let i = 0; i <= 36; i++) {
+      const angle = (Math.PI / 2) * (i / 36);
+      arcPoints.push(new THREE.Vector3(
+        90 - 90 * Math.cos(angle),
+        0.7,
+        251 + 90 * Math.sin(angle)
+      ));
+    }
+    const arc = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints(arcPoints),
+      new THREE.LineDashedMaterial({
+        color: 0x326888,
+        dashSize: 5,
+        gapSize: 3
+      })
+    );
+    arc.computeLineDistances();
+    scene.add(arc);
+
+    function addLabel(text, x, height, z, className, background) {
+      const element = document.createElement("div");
+      element.className = className;
+      element.textContent = text;
+      if (background) element.style.background = background;
+      const label = new CSS2DObject(element);
+      label.position.set(x, height, z);
+      scene.add(label);
+      return label;
+    }
+
+    addLabel("門 90（向外開）", 38, 5, 322, "地面標籤");
+
+    const postPositions = new Set();
+    const boardEdgeMaterials = new Map();
+
+    function darken(hex, amount = 0.56) {
+      const c = new THREE.Color(hex);
+      c.multiplyScalar(amount);
+      return c;
+    }
+
+    function addRack(rack) {
+      const color = new THREE.Color(rack.color);
+      const darkColor = darken(rack.color);
+      const boardMaterial = new THREE.MeshStandardMaterial({
+        color,
+        roughness: 0.72,
+        metalness: 0.05
+      });
+      const postMaterial = new THREE.MeshStandardMaterial({
+        color: darkColor,
+        roughness: 0.68,
+        metalness: 0.1
+      });
+      const edgeMaterial = new THREE.LineBasicMaterial({ color: darkColor });
+      boardEdgeMaterials.set(rack.name, edgeMaterial);
+
+      for (const height of rack.levels) {
+        const geometry = new THREE.BoxGeometry(
+          rack.x1 - rack.x0,
+          0.6,
+          rack.z1 - rack.z0
+        );
+        const board = new THREE.Mesh(geometry, boardMaterial);
+        board.position.set(
+          (rack.x0 + rack.x1) / 2,
+          height - 0.3,
+          (rack.z0 + rack.z1) / 2
+        );
+        board.castShadow = true;
+        board.receiveShadow = true;
+        scene.add(board);
+
+        const edges = new THREE.LineSegments(
+          new THREE.EdgesGeometry(geometry),
+          edgeMaterial
+        );
+        edges.position.copy(board.position);
+        scene.add(edges);
+
+        addLabel(
+          String(height),
+          rack.heightLabel.x,
+          height + 2,
+          rack.heightLabel.z,
+          "高度標籤"
+        );
+
+        if (rack.seamZ !== undefined) {
+          const seam = new THREE.Line(
+            new THREE.BufferGeometry().setFromPoints([
+              new THREE.Vector3(rack.x0, height + 0.04, rack.seamZ),
+              new THREE.Vector3(rack.x1, height + 0.04, rack.seamZ)
+            ]),
+            new THREE.LineBasicMaterial({ color: 0x00402d })
+          );
+          scene.add(seam);
+        }
+      }
+
+      const corners = [
+        [rack.x0 + 2, rack.z0 + 2],
+        [rack.x0 + 2, rack.z1 - 2],
+        [rack.x1 - 2, rack.z0 + 2],
+        [rack.x1 - 2, rack.z1 - 2]
+      ];
+
+      for (const [x, z] of corners) {
+        const key = `${x}|${z}`;
+        if (postPositions.has(key)) continue;
+        postPositions.add(key);
+
+        const post = new THREE.Mesh(
+          new THREE.BoxGeometry(4, 300, 4),
+          postMaterial
+        );
+        post.position.set(x, 150, z);
+        post.castShadow = true;
+        post.receiveShadow = true;
+        scene.add(post);
+      }
+
+      addLabel(
+        rack.label,
+        rack.labelPosition.x,
+        316,
+        rack.labelPosition.z,
+        "貨架標籤",
+        `#${color.getHexString()}`
+      );
+    }
+
+    const racks = [
+      {
+        name: "紅A",
+        label: "A 架 186×77",
+        color: 0x0072b2,
+        x0: 0, x1: 186, z0: 0, z1: 77,
+        levels: [81, 141, 201, 261],
+        labelPosition: { x: 93, z: 38.5 },
+        heightLabel: { x: 7, z: 84 }
+      },
+      {
+        name: "紅B",
+        label: "B 架 203×77",
+        color: 0xe69f00,
+        x0: 186, x1: 389, z0: 0, z1: 77,
+        levels: [81, 141, 201, 261],
+        labelPosition: { x: 287.5, z: 38.5 },
+        heightLabel: { x: 193, z: 84 }
+      },
+      {
+        name: "小格",
+        label: "C 小格 60×49",
+        color: 0xcc79a7,
+        x0: 389, x1: 449, z0: 0, z1: 49,
+        levels: [81, 168, 261],
+        labelPosition: { x: 419, z: 24.5 },
+        heightLabel: { x: 395, z: 56 }
+      },
+      {
+        name: "綠",
+        label: "D 架 251×76",
+        color: 0x009e73,
+        x0: 454, x1: 530, z0: 0, z1: 251,
+        levels: [61, 121, 181, 241, 300],
+        labelPosition: { x: 492, z: 125.5 },
+        heightLabel: { x: 447, z: 20 },
+        seamZ: 7
+      },
+      {
+        name: "橘",
+        label: "E 架 225.5×82",
+        color: 0xd7263d,
+        x0: 163.5, x1: 389, z0: 169, z1: 251,
+        levels: [81, 141, 201, 261],
+        labelPosition: { x: 276.25, z: 210 },
+        heightLabel: { x: 170, z: 162 }
+      }
+    ];
+
+    racks.forEach(addRack);
+
+    const dimensionMaterial = new THREE.LineBasicMaterial({
+      color: 0x263b49,
+      depthTest: false
+    });
+
+    function dimensionLine(a, b, tickA1, tickA2, tickB1, tickB2) {
+      addSegments([
+        new THREE.Vector3(...a), new THREE.Vector3(...b),
+        new THREE.Vector3(...tickA1), new THREE.Vector3(...tickA2),
+        new THREE.Vector3(...tickB1), new THREE.Vector3(...tickB2)
+      ], dimensionMaterial);
+    }
+
+    dimensionLine(
+      [0, 0.8, -18], [530, 0.8, -18],
+      [0, 0.8, -24], [0, 0.8, -12],
+      [530, 0.8, -24], [530, 0.8, -12]
+    );
+    addLabel("房間長 530", 265, 3, -18, "尺寸標籤");
+
+    dimensionLine(
+      [-18, 0.8, 0], [-18, 0.8, 251],
+      [-24, 0.8, 0], [-12, 0.8, 0],
+      [-24, 0.8, 251], [-12, 0.8, 251]
+    );
+    addLabel("房間寬 251", -18, 3, 125.5, "尺寸標籤");
+
+    dimensionLine(
+      [420, 0.8, 77], [420, 0.8, 169],
+      [414, 0.8, 77], [426, 0.8, 77],
+      [414, 0.8, 169], [426, 0.8, 169]
+    );
+    addLabel("走道 92", 420, 3, 123, "地面標籤");
+
+    dimensionLine(
+      [449, 0.8, 58], [454, 0.8, 58],
+      [449, 0.8, 54], [449, 0.8, 62],
+      [454, 0.8, 54], [454, 0.8, 62]
+    );
+    addLabel("間隙 5", 451.5, 3, 68, "地面標籤");
+
+    dimensionLine(
+      [0, 0.8, 238], [163.5, 0.8, 238],
+      [0, 0.8, 233], [0, 0.8, 243],
+      [163.5, 0.8, 233], [163.5, 0.8, 243]
+    );
+    addLabel("163.5", 81.75, 3, 238, "地面標籤");
+
+    // 圖層開關：尺寸線（地面尺寸線＋尺寸文字）、層板高度、貨架名稱
+    const LAYER_CLASSES = {
+      尺寸: ["尺寸標籤", "地面標籤"],
+      層高: ["高度標籤"],
+      名稱: ["貨架標籤"]
+    };
+    function setLayer(name, on) {
+      scene.traverse(obj => {
+        if (name === "尺寸" && obj.isLineSegments && obj.material === dimensionMaterial) {
+          obj.visible = on;
+        }
+        if (obj.isCSS2DObject && LAYER_CLASSES[name].some(c => obj.element.classList.contains(c))) {
+          obj.visible = on;
+        }
+      });
+    }
+    document.querySelectorAll("#圖層 button").forEach(button => {
+      button.addEventListener("click", () => {
+        const on = button.getAttribute("aria-pressed") !== "true";
+        button.setAttribute("aria-pressed", String(on));
+        setLayer(button.dataset.layer, on);
+      });
+    });
+
+    let transition = null;
+
+    function threeDView() {
+      const portraitScale = camera.aspect < 0.8 ? 1.62 : 1;
+      const target = new THREE.Vector3(265, 115, 125.5);
+      const direction = new THREE.Vector3(0.72, 0.63, 0.88).normalize();
+      const distance = 760 * portraitScale;
+      return {
+        position: target.clone().addScaledVector(direction, distance),
+        target,
+        up: new THREE.Vector3(0, 1, 0)
+      };
+    }
+
+    function topView() {
+      const halfFov = THREE.MathUtils.degToRad(camera.fov / 2);
+      const fitDepth = 310 / Math.tan(halfFov);
+      const fitWidth = 610 / (2 * Math.tan(halfFov) * camera.aspect);
+      const height = Math.max(760, fitDepth, fitWidth) * 1.08;
+      return {
+        position: new THREE.Vector3(265, height, 125.5),
+        target: new THREE.Vector3(265, 0, 125.5),
+        up: new THREE.Vector3(0, 0, -1)
+      };
+    }
+
+    function doorwayView() {
+      const portraitScale = camera.aspect < 0.8 ? 1.2 : 1;
+      return {
+        position: new THREE.Vector3(30, 230 * portraitScale, 560 * portraitScale),
+        target: new THREE.Vector3(300, 110, 110),
+        up: new THREE.Vector3(0, 1, 0)
+      };
+    }
+
+    function switchView(name, immediate = false) {
+      const view = name === "俯視"
+        ? topView()
+        : name === "門口"
+          ? doorwayView()
+          : threeDView();
+
+      document.querySelectorAll("#視角按鈕 button").forEach(button => {
+        button.classList.toggle("active", button.dataset.view === name);
+      });
+
+      if (immediate) {
+        camera.position.copy(view.position);
+        camera.up.copy(view.up);
+        controls.target.copy(view.target);
+        camera.lookAt(view.target);
+        controls.update();
+        return;
+      }
+
+      transition = {
+        start: performance.now(),
+        duration: 720,
+        fromPosition: camera.position.clone(),
+        fromTarget: controls.target.clone(),
+        fromUp: camera.up.clone(),
+        toPosition: view.position,
+        toTarget: view.target,
+        toUp: view.up
+      };
+    }
+
+    document.querySelectorAll("#視角按鈕 button").forEach(button => {
+      button.addEventListener("click", () => switchView(button.dataset.view));
+    });
+
+    // 前進／後退：相機與注視點一起沿視線水平方向移動（像人在房間裡走）
+    let walkDir = 0;
+    let lastWalk = 0;
+    function bindWalk(id, dir) {
+      const el = document.getElementById(id);
+      const stop = () => { walkDir = 0; };
+      el.addEventListener("pointerdown", e => {
+        e.preventDefault();
+        transition = null;
+        walkDir = dir;
+        lastWalk = performance.now();
+        el.setPointerCapture?.(e.pointerId);
+      });
+      el.addEventListener("pointerup", stop);
+      el.addEventListener("pointercancel", stop);
+      el.addEventListener("lostpointercapture", stop);
+    }
+    bindWalk("前進", 1);
+    bindWalk("後退", -1);
+    function stepWalk(now) {
+      if (!walkDir) return;
+      const dt = Math.min(0.05, (now - lastWalk) / 1000);
+      lastWalk = now;
+      const forward = new THREE.Vector3();
+      camera.getWorldDirection(forward);
+      forward.y = 0;
+      if (forward.lengthSq() < 1e-6) {
+        forward.set(0, 0, -1).applyQuaternion(camera.quaternion);
+        forward.y = 0;
+      }
+      forward.normalize().multiplyScalar(walkDir * 150 * dt);
+      camera.position.add(forward);
+      controls.target.add(forward);
+    }
+
+    controls.addEventListener("start", () => {
+      const hint = document.getElementById("操作提示");
+      if (hint) hint.hidden = true;
+      transition = null;
+    });
+
+    switchView("立體", true);
+
+    function easeInOut(t) {
+      return t < 0.5
+        ? 4 * t * t * t
+        : 1 - Math.pow(-2 * t + 2, 3) / 2;
+    }
+
+    function animate(time) {
+      requestAnimationFrame(animate);
+      stepWalk(performance.now());
+
+      if (transition) {
+        const raw = Math.min(1, (time - transition.start) / transition.duration);
+        const eased = easeInOut(raw);
+
+        camera.position.lerpVectors(
+          transition.fromPosition,
+          transition.toPosition,
+          eased
+        );
+        controls.target.lerpVectors(
+          transition.fromTarget,
+          transition.toTarget,
+          eased
+        );
+        camera.up.lerpVectors(
+          transition.fromUp,
+          transition.toUp,
+          eased
+        ).normalize();
+
+        if (raw >= 1) transition = null;
+      }
+
+      controls.update();
+      renderer.render(scene, camera);
+      labelRenderer.render(scene, camera);
+    }
+
+    requestAnimationFrame(animate);
+
+    addEventListener("resize", () => {
+      camera.aspect = innerWidth / innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(innerWidth, innerHeight);
+      labelRenderer.setSize(innerWidth, innerHeight);
+    });
+  </script>
+
+</html>

@@ -1670,6 +1670,7 @@
     }));
     function updateDrawerHeight() {
       document.documentElement.style.setProperty("--drawer-h", `${Math.round(drawer.getBoundingClientRect().height)}px`);
+      if (viewReady) { applyViewPadding(); if (isNarrow()) refitView(); } // 抽屜高度變了：投影中心跟著可見區，距離只在沒手動動過時重算
     }
     function setDrawer(open) {
       drawerBody.hidden = !open;
@@ -1777,6 +1778,22 @@
     // PerspectiveCamera.fov 是垂直視角，直立手機另算水平 halfFovX = atan(tan(halfFovY) × aspect)，距離取兩者較大者。
     const FIT_MARGIN = 1.25;
     let lastFit = null;
+
+    // 精簡版可見區＝標題列底到抽屜頂。做法同 Mapbox GL JS 的 viewport padding（把消失點偏移到可見區中心）：
+    // three.js PerspectiveCamera.setViewOffset(fullWidth, fullHeight, x, y, width, height)（r160 src/cameras/PerspectiveCamera.js：
+    // 設 aspect = fullWidth/fullHeight；updateProjectionMatrix 的 view 分支 top -= offsetY*height/fullHeight，視窗往下移 offsetY，畫面內容就上移 offsetY）。
+    // 以 canvas 全尺寸為 view，offsetY = (padBottom - padTop) / 2。回傳可見區高度占 canvas 高度的比例（fitView 用）。
+    function applyViewPadding() {
+      if (!isNarrow()) {
+        if (camera.view && camera.view.enabled) camera.clearViewOffset();
+        return 1;
+      }
+      const W = innerWidth, H = innerHeight;
+      const padTop = Math.max(0, document.getElementById("標題區").getBoundingClientRect().bottom);
+      const padBottom = Math.max(0, Math.min(H - padTop - H * 0.2, H - drawer.getBoundingClientRect().top)); // 可見區至少留 20% 高，免得除以近零
+      camera.setViewOffset(W, H, 0, (padBottom - padTop) / 2, W, H);
+      return (H - padTop - padBottom) / H;
+    }
     function fitView(direction0) {
       const { length: L, width: W } = DESIGN.room;
       // 尺寸線、尺寸數字、房間尺寸都關 → 不把地面尺寸線 offset 擴進範圍（門片外擴一律保留）
@@ -1793,8 +1810,10 @@
       const center = box.getCenter(new THREE.Vector3());
       const corners = [];
       for (const x of [box.min.x, box.max.x]) for (const y of [box.min.y, box.max.y]) for (const z of [box.min.z, box.max.z]) corners.push(new THREE.Vector3(x, y, z));
-      const halfY = THREE.MathUtils.degToRad(camera.fov * 0.5);
-      const halfX = Math.atan(Math.tan(halfY) * camera.aspect);
+      const visRatio = applyViewPadding(); // 精簡版：只用可見區高度算距離；桌機恆為 1
+      const halfY0 = THREE.MathUtils.degToRad(camera.fov * 0.5);
+      const halfX = Math.atan(Math.tan(halfY0) * camera.aspect);
+      const halfY = Math.atan(Math.tan(halfY0) * visRatio);
 
       // 同一條 frameArea 公式：方框八角轉到相機座標取寬高，垂直與水平所需距離取 max
       const frame = direction => {
@@ -1859,7 +1878,8 @@
 
     function topView() {
       const halfFov = THREE.MathUtils.degToRad(camera.fov / 2);
-      const fitDepth = (DESIGN.room.width + 59) / Math.tan(halfFov);
+      const visRatio = applyViewPadding(); // 精簡版：深度方向只用可見區高度（桌機恆為 1）
+      const fitDepth = (DESIGN.room.width + 59) / (Math.tan(halfFov) * visRatio);
       const fitWidth = (DESIGN.room.length + 80) / (2 * Math.tan(halfFov) * camera.aspect);
       const height = Math.max(760, fitDepth, fitWidth) * 1.08;
       const c = roomCenter();
@@ -1872,9 +1892,11 @@
 
     function doorwayView() {
       const portraitScale = camera.aspect < 0.8 ? 1.2 : 1;
+      const k = 1 / applyViewPadding(); // 精簡版：距離依可見區高度比例拉遠（桌機 k=1）
+      const doorTarget = new THREE.Vector3(300, 110, 110);
       return {
-        position: new THREE.Vector3(30, 230 * portraitScale, 560 * portraitScale),
-        target: new THREE.Vector3(300, 110, 110),
+        position: doorTarget.clone().add(new THREE.Vector3(30 - 300, 230 * portraitScale - 110, 560 * portraitScale - 110).multiplyScalar(k)),
+        target: doorTarget,
         up: new THREE.Vector3(0, 1, 0)
       };
     }

@@ -589,6 +589,7 @@
     const rackDep = r => (r.axis === "z" ? r.x1 - r.x0 : r.z1 - r.z0);
     const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
     const MIN_SPAN = LIMITS.minSpan;
+    const GAP_LABEL_DZ = 10; // 連續尺寸線上「間隙」標籤往外錯開的距離（取景範圍也要涵蓋）
     const LABEL_RISE = 16; // 貨架名稱標籤浮在貨架頂端上方的高度
     const labelY = () => DESIGN.rackHeight + LABEL_RISE;
 
@@ -910,7 +911,7 @@
           } else {
             dimensionLine([pc.a, 0.8, at], [pc.b, 0.8, at],
               [pc.a, 0.8, at - t], [pc.a, 0.8, at + t], [pc.b, 0.8, at - t], [pc.b, 0.8, at + t]);
-            addLabel(g, pc.text, mid, 3, at + (pc.gap ? -10 : 0), "地面標籤");
+            addLabel(g, pc.text, mid, 3, at + (pc.gap ? -GAP_LABEL_DZ : 0), "地面標籤");
           }
         }
       }
@@ -1650,6 +1651,7 @@
     gui.$title.addEventListener("click", hideHintWhenOpen);
     gui.$title.addEventListener("keydown", e => { if (e.code === "Enter" || e.code === "Space") hideHintWhenOpen(); });
     // ───────────── 窄螢幕（≤700px）：選單收進底部抽屜、標籤減量 ─────────────
+    var viewReady = false; // 視角程式初始化完成後才允許 refitView
     const narrowMQ = matchMedia("(max-width: 700px)");
     function isNarrow() { return narrowMQ.matches; }
     const drawer = document.getElementById("抽屜");
@@ -1683,16 +1685,20 @@
         }
       }
       if (on) setDrawer(false);
-      else for (const o of labelSet) o.element.classList.remove("標籤隱藏");
+      else {
+        for (const o of labelSet) o.element.classList.remove("標籤隱藏");
+        restoreDesktopCamera();
+      }
       renderCloudUi();
       updateDrawerHeight();
+      if (viewReady) refitView();
     }
     narrowMQ.addEventListener("change", applyNarrow);
     addEventListener("resize", updateDrawerHeight);
     new ResizeObserver(updateDrawerHeight).observe(drawer); // 抽屜展開／收合／內容變高時，前進後退按鈕跟著上移
 
     // 標籤減量（three.js manual〈Aligning HTML Elements to 3D〉）：
-    // (a) 投影後 |z|>1 或超出畫面就隱藏；(c) 貨架名稱與層高標籤用 Raycaster 判斷是否被貨架擋住，每 200ms 最多做一次
+    // (a) 投影後 |z|>1 或超出畫面就隱藏；(c) 貨架名稱、層高、房間長／寬標籤用 Raycaster 判斷是否被貨架擋住，每 200ms 最多做一次
     const labelTmp = new THREE.Vector3();
     const labelRay = new THREE.Raycaster();
     let lastOcclusion = 0;
@@ -1713,7 +1719,7 @@
         if (doOcclusion) {
           const cls = o.element.classList;
           let occluded = false;
-          if (!off && o.visible && (cls.contains("貨架標籤") || cls.contains("高度標籤"))) {
+          if (!off && o.visible && (cls.contains("貨架標籤") || cls.contains("高度標籤") || cls.contains("尺寸標籤"))) {
             labelRay.setFromCamera(labelTmp, camera);
             labelRay.far = Math.max(0, dist - 2);
             // Raycaster 只看 layers、不處理 clippingPlanes：被剖切掉（y 高於剖切高度）的命中不算遮擋
@@ -1747,12 +1753,86 @@
 
     if (new URLSearchParams(location.search).has("debug")) {
       window.__b5scene = scene;
-      window.__b5 = { DESIGN, DEFAULT_DESIGN, renderer, scene, gui, designParams, rackGroups, afterChange, cloud, LIMITS, sanitizeDesign, dataProblem, showDesign, designToData, onRemote, adoptRemote, fetchLatest, chainPieces, formatTaipei, saveErrorText, noteLocalEdit };
+      window.__b5 = { DESIGN, DEFAULT_DESIGN, renderer, scene, gui, designParams, rackGroups, afterChange, cloud, LIMITS, sanitizeDesign, dataProblem, showDesign, designToData, camera, controls, getFit: () => lastFit, onRemote, adoptRemote, fetchLatest, chainPieces, formatTaipei, saveErrorText, noteLocalEdit };
     }
 
     let transition = null;
 
+    let currentView = "立體";
+    let userMoved = false; // 使用者手動轉動／平移／縮放後，resize 不再自動重新取景
+
+    // 窄螢幕「立體」視角：fit-to-view。公式取自 three.js manual〈Loading .OBJ〉frameArea：
+    //   distance = halfSizeToFitOnScreen / tangent(halfFovY)
+    // 原文「We want a little extra space above and below so we'll pass in a slightly larger size」→ 乘留白係數。
+    // PerspectiveCamera.fov 是垂直視角，直立手機另算水平 halfFovX = atan(tan(halfFovY) × aspect)，距離取兩者較大者。
+    const FIT_MARGIN = 1.25;
+    let lastFit = null;
+    function fitView(direction0) {
+      const { length: L, width: W } = DESIGN.room;
+      const maxOffset = Math.max(...DESIGN.dimChains.map(c => c.offset));
+      const doorW = DESIGN.door.x1 - DESIGN.door.x0;
+      // 要框的範圍：房間（含貨架名稱標籤高度）往外擴到地面尺寸線與門片外擴
+      const box = new THREE.Box3(
+        new THREE.Vector3(-maxOffset, 0, -maxOffset - GAP_LABEL_DZ),
+        new THREE.Vector3(L, labelY() + 12, W + Math.max(doorW, maxOffset))
+      );
+      const boxSize = box.getSize(new THREE.Vector3()).length();
+      const center = box.getCenter(new THREE.Vector3());
+      const corners = [];
+      for (const x of [box.min.x, box.max.x]) for (const y of [box.min.y, box.max.y]) for (const z of [box.min.z, box.max.z]) corners.push(new THREE.Vector3(x, y, z));
+      const halfY = THREE.MathUtils.degToRad(camera.fov * 0.5);
+      const halfX = Math.atan(Math.tan(halfY) * camera.aspect);
+
+      // 同一條 frameArea 公式：方框八角轉到相機座標取寬高，垂直與水平所需距離取 max
+      const frame = direction => {
+        const forward = direction.clone().negate();
+        const right = new THREE.Vector3().crossVectors(forward, new THREE.Vector3(0, 1, 0)).normalize();
+        const camUp = new THREE.Vector3().crossVectors(right, forward).normalize();
+        let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+        for (const c of corners) {
+          const rel = c.clone().sub(center);
+          const px = rel.dot(right), py = rel.dot(camUp);
+          minX = Math.min(minX, px); maxX = Math.max(maxX, px);
+          minY = Math.min(minY, py); maxY = Math.max(maxY, py);
+        }
+        const distance = Math.max(
+          ((maxY - minY) / 2) * FIT_MARGIN / Math.tan(halfY),
+          ((maxX - minX) / 2) * FIT_MARGIN / Math.tan(halfX)
+        );
+        const target = center.clone().addScaledVector(right, (minX + maxX) / 2).addScaledVector(camUp, (minY + maxY) / 2);
+        return { direction, distance, target };
+      };
+
+      let best = frame(direction0);
+      const az0 = Math.atan2(direction0.x, direction0.z); // 方向沿用原本立體視角，只算距離
+      lastFit = { azimuthDeg: Math.round(THREE.MathUtils.radToDeg(az0)), distance: Math.round(best.distance), margin: FIT_MARGIN };
+
+      camera.near = boxSize / 100;
+      camera.far = boxSize * 100;
+      camera.updateProjectionMatrix();
+      controls.maxDistance = Math.max(2200, best.distance * 1.6);
+      // near 變大（boxSize/100）後，拉得太近會切到近處貨架：minDistance 至少 near 的 2 倍
+      controls.minDistance = Math.max(10, camera.near * 2);
+      return {
+        position: best.target.clone().addScaledVector(best.direction, best.distance),
+        target: best.target,
+        up: new THREE.Vector3(0, 1, 0)
+      };
+    }
+
+    // 還原桌機的相機範圍（fit-to-view 會改 near／far／maxDistance／minDistance）；不改鏡頭位置
+    function restoreDesktopCamera() {
+      camera.near = 1;
+      camera.far = 4000;
+      camera.updateProjectionMatrix();
+      controls.maxDistance = 2200;
+      controls.minDistance = 10;
+    }
+
     function threeDView() {
+      if (isNarrow()) return fitView(new THREE.Vector3(0.72, 0.63, 0.88).normalize());
+      // 桌機：維持原本的固定距離，並還原 fit-to-view 可能改過的 near／far／maxDistance／minDistance
+      restoreDesktopCamera();
       const portraitScale = camera.aspect < 0.8 ? 1.62 : 1;
       const target = roomCenter();
       const direction = new THREE.Vector3(0.72, 0.63, 0.88).normalize();
@@ -1796,8 +1876,11 @@
       document.querySelectorAll("#視角按鈕 button").forEach(button => {
         button.classList.toggle("active", button.dataset.view === name);
       });
+      currentView = name;
+      userMoved = false;
 
       if (immediate) {
+        transition = null;
         camera.position.copy(view.position);
         camera.up.copy(view.up);
         controls.target.copy(view.target);
@@ -1831,6 +1914,7 @@
       el.addEventListener("pointerdown", e => {
         e.preventDefault();
         transition = null;
+        userMoved = true;
         walkDir = dir;
         lastWalk = performance.now();
         el.setPointerCapture?.(e.pointerId);
@@ -1861,9 +1945,16 @@
       const hint = document.getElementById("操作提示");
       if (hint) hint.hidden = true;
       transition = null;
+      userMoved = true;
     });
 
     switchView("立體", true);
+    viewReady = true;
+
+    // 窄螢幕／尺寸改變後，使用者還沒手動動過鏡頭時，重新取景「立體」視角
+    function refitView() {
+      if (!userMoved && currentView === "立體") switchView("立體", true);
+    }
 
     function easeInOut(t) {
       return t < 0.5
@@ -1911,6 +2002,7 @@
       camera.updateProjectionMatrix();
       renderer.setSize(innerWidth, innerHeight);
       labelRenderer.setSize(innerWidth, innerHeight);
+      if (isNarrow()) { updateDrawerHeight(); refitView(); }
     });
   </script>
 

@@ -470,6 +470,9 @@
   <div id="圖層" role="group" aria-label="圖層開關">
     <span>圖層</span>
     <button type="button" data-layer="尺寸" aria-pressed="true">尺寸線</button>
+    <button type="button" data-layer="尺寸數字" aria-pressed="true">尺寸數字</button>
+    <button type="button" data-layer="房間尺寸" aria-pressed="true">房間尺寸</button>
+    <button type="button" data-layer="門" aria-pressed="true">門</button>
     <button type="button" data-layer="層高" aria-pressed="true">層板高度</button>
     <button type="button" data-layer="名稱" aria-pressed="true">貨架名稱</button>
     <button type="button" data-layer="牆面" aria-pressed="true">牆面</button>
@@ -785,7 +788,7 @@
       g.add(arc);
 
       addLabel(g, `門 ${fmt(doorW)}（向${d.swing === "out" ? "外" : "內"}開）`,
-        d.x0 + d.labelOffset.x, 5, W + sign * d.labelOffset.z, "地面標籤");
+        d.x0 + d.labelOffset.x, 5, W + sign * d.labelOffset.z, "地面標籤 門標籤");
       return g;
     }
 
@@ -895,9 +898,9 @@
       ], dimensionMaterial);
 
       dimensionLine([0, 0.8, -18], [L, 0.8, -18], [0, 0.8, -24], [0, 0.8, -12], [L, 0.8, -24], [L, 0.8, -12]);
-      addLabel(g, `房間長 ${fmt(L)}`, L / 2, 3, -18, "尺寸標籤");
+      addLabel(g, `房間長 ${fmt(L)}`, L / 2, 3, -18, "尺寸標籤 房間標籤");
       dimensionLine([-18, 0.8, 0], [-18, 0.8, W], [-24, 0.8, 0], [-12, 0.8, 0], [-24, 0.8, W], [-12, 0.8, W]);
-      addLabel(g, `房間寬 ${fmt(W)}`, -18, 3, W / 2, "尺寸標籤");
+      addLabel(g, `房間寬 ${fmt(W)}`, -18, 3, W / 2, "尺寸標籤 房間標籤");
 
       for (const chain of DESIGN.dimChains) {
         const at = chain.anchor === "zW" ? W + chain.offset : -chain.offset;
@@ -907,11 +910,11 @@
           if (chain.axis === "z") {
             dimensionLine([at, 0.8, pc.a], [at, 0.8, pc.b],
               [at - t, 0.8, pc.a], [at + t, 0.8, pc.a], [at - t, 0.8, pc.b], [at + t, 0.8, pc.b]);
-            addLabel(g, pc.text, at, 3, mid, "地面標籤");
+            addLabel(g, pc.text, at, 3, mid, "地面標籤 數字標籤");
           } else {
             dimensionLine([pc.a, 0.8, at], [pc.b, 0.8, at],
               [pc.a, 0.8, at - t], [pc.a, 0.8, at + t], [pc.b, 0.8, at - t], [pc.b, 0.8, at + t]);
-            addLabel(g, pc.text, mid, 3, at + (pc.gap ? -GAP_LABEL_DZ : 0), "地面標籤");
+            addLabel(g, pc.text, mid, 3, at + (pc.gap ? -GAP_LABEL_DZ : 0), "地面標籤 數字標籤");
           }
         }
       }
@@ -922,9 +925,11 @@
     const cutPlane = new THREE.Plane(new THREE.Vector3(0, -1, 0), DESIGN.room.ceiling);
     const cutInput = document.getElementById("剖切高度");
     const cutOut = document.getElementById("剖切值");
-    const layerState = { 尺寸: true, 層高: true, 名稱: true, 牆面: true };
+    const layerState = { 尺寸: true, 尺寸數字: true, 房間尺寸: true, 門: true, 層高: true, 名稱: true, 牆面: true };
     const LAYER_CLASSES = {
-      尺寸: ["尺寸標籤", "地面標籤"],
+      尺寸數字: ["數字標籤"],
+      房間尺寸: ["房間標籤"],
+      門: ["門標籤"],
       層高: ["高度標籤"],
       名稱: ["貨架標籤"]
     };
@@ -979,6 +984,7 @@
         button.setAttribute("aria-pressed", String(on));
         layerState[button.dataset.layer] = on;
         applyLayers();
+        if (isNarrow() && viewReady) refitView(); // 取景只框可見內容（窄螢幕）
       });
     });
     cutInput.addEventListener("input", applyCut);
@@ -1731,9 +1737,12 @@
       }
     }
     // 窄螢幕預設關閉「層板高度」圖層（使用者可在抽屜內打開）
+    // 尺寸數字、房間尺寸、門 也預設關閉（標籤太多會重疊；桌機全開）
     if (isNarrow()) {
-      layerState.層高 = false;
-      document.querySelector('#圖層 button[data-layer="層高"]').setAttribute("aria-pressed", "false");
+      for (const name of ["層高", "尺寸數字", "房間尺寸", "門"]) {
+        layerState[name] = false;
+        document.querySelector(`#圖層 button[data-layer="${name}"]`).setAttribute("aria-pressed", "false");
+      }
     }
     if (isNarrow()) gui.close();
 
@@ -1769,11 +1778,14 @@
     let lastFit = null;
     function fitView(direction0) {
       const { length: L, width: W } = DESIGN.room;
-      const maxOffset = Math.max(...DESIGN.dimChains.map(c => c.offset));
-      const doorW = DESIGN.door.x1 - DESIGN.door.x0;
+      // 尺寸線、尺寸數字、房間尺寸都關 → 不把地面尺寸線 offset 擴進範圍（門片外擴一律保留）
+      const dimsShown = layerState.尺寸 || layerState.尺寸數字 || layerState.房間尺寸;
+      const maxOffset = dimsShown ? Math.max(...DESIGN.dimChains.map(c => c.offset)) : 0;
+      const gapDz = dimsShown ? GAP_LABEL_DZ : 0;
+      const doorW = DESIGN.door.x1 - DESIGN.door.x0; // 門片與開門弧線永遠畫出，不隨「門」標籤圖層縮小
       // 要框的範圍：房間（含貨架名稱標籤高度）往外擴到地面尺寸線與門片外擴
       const box = new THREE.Box3(
-        new THREE.Vector3(-maxOffset, 0, -maxOffset - GAP_LABEL_DZ),
+        new THREE.Vector3(-maxOffset, 0, -maxOffset - gapDz),
         new THREE.Vector3(L, labelY() + 12, W + Math.max(doorW, maxOffset))
       );
       const boxSize = box.getSize(new THREE.Vector3()).length();

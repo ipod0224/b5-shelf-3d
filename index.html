@@ -199,7 +199,7 @@
       text-align: center;
       max-width: 40vw;
     }
-    @media (max-width: 700px) {
+    @media (max-width: 700px), (pointer: coarse) {
       #圖層 {
         flex-wrap: wrap;
         justify-content: flex-start;
@@ -307,7 +307,7 @@
     .狀態列 { white-space: pre-line; color: #e0e0e0; }
     #最後編輯 { margin-top: 2px; }
     #調整面板 .lil-gui .title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    @media (max-width: 680px) {
+    @media (max-width: 680px), (pointer: coarse) {
       #調整面板 {
         top: calc(max(12px, env(safe-area-inset-top)) + 196px);
         max-height: calc(100dvh - max(12px, env(safe-area-inset-top)) - 196px - 175px);
@@ -1621,7 +1621,7 @@
         return;
       }
       const rectOf = id => document.getElementById(id).getBoundingClientRect();
-      const mobile = matchMedia("(max-width: 680px)").matches;
+      const mobile = matchMedia("(max-width: 680px), (pointer: coarse)").matches;
       const viewsEl = document.getElementById("視角按鈕");
       const layersEl = document.getElementById("圖層");
       const hintEl = document.getElementById("操作提示");
@@ -1656,9 +1656,10 @@
     const hideHintWhenOpen = () => { if (!gui._closed) document.getElementById("操作提示").hidden = true; };
     gui.$title.addEventListener("click", hideHintWhenOpen);
     gui.$title.addEventListener("keydown", e => { if (e.code === "Enter" || e.code === "Space") hideHintWhenOpen(); });
-    // ───────────── 窄螢幕（≤700px）：選單收進底部抽屜、標籤減量 ─────────────
+    // ───────────── 精簡版（≤700px 或 pointer: coarse）：選單收進底部抽屜、標籤減量 ─────────────
     var viewReady = false; // 視角程式初始化完成後才允許 refitView
-    const narrowMQ = matchMedia("(max-width: 700px)");
+    const COMPACT_MQ = "(max-width: 700px), (pointer: coarse)"; // 與 CSS @media 同一條件
+    const narrowMQ = matchMedia(COMPACT_MQ);
     function isNarrow() { return narrowMQ.matches; }
     const drawer = document.getElementById("抽屜");
     const drawerHandle = document.getElementById("抽屜把手");
